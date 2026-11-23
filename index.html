@@ -92,6 +92,11 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
 .bar i{display:block;height:100%;border-radius:5px;background:var(--red);opacity:.5}
 .row.top .bar i{opacity:1}
 .row.top .rl span:first-child{font-weight:700}
+.dd{font-size:11.5px;color:#4b5563;margin-top:3px;overflow-wrap:anywhere}
+.dd span{color:var(--mut)}
+.opts{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+.opts label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--tx)}
+.row2 em{font-style:normal;font-size:12px;color:var(--red)}
 .more{font-size:12px;color:var(--mut);padding-top:8px;border-top:1px solid var(--bd)}
 .empty{padding:28px;text-align:center;color:var(--mut)}
 
@@ -161,13 +166,13 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
         <div id="drop" tabindex="0" role="button" aria-label="Carregar arquivos">
           <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg></div>
           <strong>Carregar arquivos dos boletins</strong>
-          <span>Arraste aqui ou clique para selecionar · lê todas as abas automaticamente</span>
+          <span>Arraste aqui ou clique para selecionar · lê as abas Base, DePara e Base DDD automaticamente</span>
           <input type="file" id="file" multiple hidden>
         </div>
         <div id="status">Aguardando arquivos</div>
         <div id="files"></div>
         <div class="row2">
-          <label>Data de referência <input type="date" id="dt"></label>
+          <label>Data de referência <input type="date" id="dt"></label><em id="dtSrc"></em>
         </div>
       </div>
     </section>
@@ -188,8 +193,9 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
     </section>
 
     <section class="step locked" id="s3">
-      <div class="sh"><span class="n">3</span><div><b>Imagem do boletim</b><small>Top 5 de cada boletim, com o top 2 de Experiência do Cliente e Cancelamento abaixo.</small></div></div>
+      <div class="sh"><span class="n">3</span><div><b>Imagem do boletim</b><small>Um card por boletim: top 5 com medidor e DDDs, e o top 2 de Experiência do Cliente e Cancelamento.</small></div></div>
       <div class="sb">
+        <div class="opts"><label><input type="checkbox" id="optDDD" checked> Mostrar DDD</label><label><input type="checkbox" id="optCa" checked> Incluir Cancelamento</label></div>
         <div id="pv"><div class="ph">Clique em “Gerar imagem” no resumo ao lado.</div></div>
         <div class="acts"><button type="button" class="btn" id="dl" disabled>Baixar PNG</button><button type="button" class="btn g" id="cp" disabled>Copiar imagem</button><span id="outMsg"></span></div>
       </div>
@@ -206,12 +212,13 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
     <div class="st">
       <div><b id="n1">0</b><span>Arquivos</span></div>
       <div><b id="n2">0/4</b><span>Boletins</span></div>
-      <div><b id="n3">—</b><span>Ligações</span></div>
+      <div><b id="n3">—</b><span>Interações</span></div>
     </div>
     <div class="ck">
       <h4>Conferência</h4>
       <div class="ci" id="c1"><span class="dot">✓</span><div><b>Arquivos lidos</b><small id="c1s">Carregue os arquivos no passo 1</small></div></div>
       <div class="ci" id="c2"><span class="dot">✓</span><div><b>Boletins com dados</b><small id="c2s">Nenhum boletim preenchido</small></div></div>
+      <div class="ci" id="c4"><span class="dot">✓</span><div><b>DDD</b><small id="c4s">Carregue os arquivos no passo 1</small></div></div>
       <div class="ci" id="c3"><span class="dot">✓</span><div><b>Data de referência</b><small id="c3s">Informe a data no passo 1</small></div></div>
     </div>
     <div class="sd3">
@@ -226,93 +233,254 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
-const fmt=n=>(n>0&&n<0.1)?"<0,1%":n.toFixed(1).replace(".",",")+"%";
-const fint=n=>Math.round(n).toLocaleString("pt-BR");
+const norm=s=>String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim().toLowerCase();
 const txt=v=>String(v==null?"":v).replace(/\s+/g," ").trim();
+const fmt=n=>(n>0&&n<0.1)?"<0,1%":n.toFixed(1).replace(".",",")+"%";     /* tela: 1 casa */
+const fmtI=n=>(n>0&&n<0.5)?"<1%":Math.round(n)+"%";                      /* imagem: inteiro, como no Excel */
+const fint=n=>Math.round(n).toLocaleString("pt-BR");
 function parseP(v){
   if(typeof v==="number")return isFinite(v)?v:null;
-  const s=txt(v);if(!/\d/.test(s))return null;
-  const n=parseFloat(s.replace("%","").replace(/\./g,"").replace(",","."));
-  return isNaN(n)?null:n;
+  let s=txt(v).replace("%","").replace(/\s/g,"");if(!/\d/.test(s))return null;
+  if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");               /* 1.234,5 → 1234.5 ; 0.25 fica 0.25 */
+  const n=parseFloat(s);return isNaN(n)?null:n;
 }
+const isEmpty=v=>v==null||v===""||(typeof v==="string"&&!v.trim());
 
-/* ================= leitura da planilha (Base / Dados Tratados) ================= */
+/* ================= DDD ================= */
+const DDD_UF={};
+"11:SP,12:SP,13:SP,14:SP,15:SP,16:SP,17:SP,18:SP,19:SP,21:RJ,22:RJ,24:RJ,27:ES,28:ES,31:MG,32:MG,33:MG,34:MG,35:MG,37:MG,38:MG,41:PR,42:PR,43:PR,44:PR,45:PR,46:PR,47:SC,48:SC,49:SC,51:RS,53:RS,54:RS,55:RS,61:DF,62:GO,63:TO,64:GO,65:MT,66:MT,67:MS,68:AC,69:RO,71:BA,73:BA,74:BA,75:BA,77:BA,79:SE,81:PE,82:AL,83:PB,84:RN,85:CE,86:PI,87:PE,88:CE,89:PI,91:PA,92:AM,93:PA,94:PA,95:RR,96:AP,97:AM,98:MA,99:MA"
+  .split(",").forEach(p=>{const [d,u]=p.split(":");DDD_UF[d]=u});
+const digits=v=>String(v==null?"":v).replace(/\D/g,"");
+/* mesma regra da planilha: ANI com 55 → DDD = dígitos 3-4; senão MSISDN (10+ dígitos) → 2 primeiros.
+   Extras de segurança: ANI sem 55, campo "DDD Cliente" e telefone com 0 de operadora. */
+function dddOf(ani,msisdn,dcli,uf){
+  const ok=d=>d&&uf[d]?d:null;
+  const a=digits(ani),m=digits(msisdn),c=digits(dcli);
+  let d=null;
+  if(a.startsWith("55")&&a.length>=12)d=ok(a.slice(2,4));
+  if(!d&&m.length>=10)d=ok(m.slice(0,2));
+  if(!d&&a.length>=10&&a.length<=11)d=ok(a.slice(0,2));
+  if(!d&&a.length>=12&&a[0]==="0")d=ok(a.slice(3,5));
+  if(!d&&c.length===2)d=ok(c);
+  return d;
+}
+const dddStr=t=>t.d+" - "+t.uf+" ("+fmtI(t.p)+")";
+
+/* ================= leitura das abas ================= */
+function rowsOf(wb,name,maxRows){
+  const ws=wb.Sheets[name];if(!ws||!ws["!ref"])return[];
+  const r=XLSX.utils.decode_range(ws["!ref"]);r.s.r=0;r.s.c=0;
+  if(maxRows)r.e.r=Math.min(r.e.r,maxRows-1);
+  return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:"",range:r,blankrows:true});
+}
 function findHeader(rows){
-  for(let r=0;r<Math.min(rows.length,15);r++){
+  for(let r=0;r<Math.min(rows.length,40);r++){
     const cols={};
-    rows[r].forEach((c,i)=>{
-      const s=norm(txt(c));if(!s)return;
+    (rows[r]||[]).forEach((c,i)=>{
+      const s=norm(c);if(!s||typeof c==="number")return;
       if(/^nome\b/.test(s)&&cols.nome==null)cols.nome=i;
-      else if(/^valor|^qtd|^quantidade|^volume/.test(s)&&cols.val==null)cols.val=i;
-      else if(/percent|^%/.test(s)&&cols.pct==null)cols.pct=i;
+      else if(/^(valor|qtd|quantidade|volume)\b/.test(s)&&cols.val==null)cols.val=i;
+      else if(/^percent|^%/.test(s)&&cols.pct==null)cols.pct=i;
       else if(/nomenclatura|motivo/.test(s)&&cols.mot==null)cols.mot=i;
-      else if(/jornada/.test(s)&&cols.jor==null)cols.jor=i;
+      else if(/^jornada\b/.test(s)&&cols.jor==null)cols.jor=i;
     });
     if(cols.jor!=null&&(cols.mot!=null||cols.nome!=null)&&(cols.pct!=null||cols.val!=null))return{r,cols};
   }
   return null;
 }
-function extractJornadas(sheets){
-  const names=Object.keys(sheets);
-  const dpName=names.find(n=>/depara/i.test(n)&&/hfc/i.test(n))||names.find(n=>/depara/i.test(n));
-  const dep={};
-  if(dpName)sheets[dpName].forEach((r,i)=>{if(i&&txt(r[0]))dep[norm(txt(r[0]))]=[txt(r[1]),txt(r[2])]});
-  const cands=names.map(n=>({n,h:findHeader(sheets[n])})).filter(x=>x.h);
-  if(!cands.length)return null;
-  cands.sort((a,b)=>((b.h.cols.val!=null&&b.h.cols.nome!=null)-(a.h.cols.val!=null&&a.h.cols.nome!=null)));
-  const {n:sheet,h}=cands[0],rows=sheets[sheet],{cols}=h;
+function readDePara(wb){
+  const names=wb.SheetNames.filter(n=>/de\s*para/i.test(n)&&!/ddd/i.test(n));
+  const pick=names.find(n=>/hfc/i.test(n))||names[0];
+  const dep={},rev={};
+  if(!pick)return{dep,rev,sheet:null};
+  rowsOf(wb,pick).forEach((r,i)=>{
+    if(!i||!txt(r[0]))return;
+    const k=norm(r[0]);dep[k]=[txt(r[1]),txt(r[2])];
+    const rk=norm(r[1])+"|"+norm(r[2]);(rev[rk]||(rev[rk]=[])).push(txt(r[0]));
+  });
+  return{dep,rev,sheet:pick};
+}
+function parseMotivos(rows,h,dp){
+  const {cols}=h;
   let total=null;
   for(let r=0;r<h.r&&total==null;r++)for(const c of rows[r]){if(typeof c==="number"&&c>0){total=c;break}}
-  const data=rows.slice(h.r+1);
-  const pcol=cols.pct!=null?data.map(r=>parseP(r[cols.pct])).filter(x=>x!=null):[];
-  const frac=pcol.length>0&&Math.max(...pcol)<=1;
-  const by={};let mapped=0;
-  for(const r of data){
+  const raw=[];
+  for(const r of rows.slice(h.r+1)){
     const nome=cols.nome!=null?txt(r[cols.nome]):"";
-    let label=cols.mot!=null?txt(r[cols.mot]):"";
-    let jor=txt(r[cols.jor]);
-    if((!label||!jor)&&nome&&dep[norm(nome)]){label=label||dep[norm(nome)][0];jor=jor||dep[norm(nome)][1]}
-    if(!label||!jor)continue;
+    let label=cols.mot!=null?txt(r[cols.mot]):"",jor=txt(r[cols.jor]);
+    const dpv=nome&&dp.dep[norm(nome)];
+    if(dpv){label=label||dpv[0];jor=jor||dpv[1]}
+    if(!label||!jor||/^#|^0$/.test(label))continue;
     const val=cols.val!=null&&typeof r[cols.val]==="number"?r[cols.val]:null;
-    let pct=cols.pct!=null?parseP(r[cols.pct]):null;
-    if(pct!=null)pct=frac?pct*100:pct;
-    else if(val!=null&&total)pct=val/total*100;
-    if(pct==null)continue;
+    const p=cols.pct!=null?parseP(r[cols.pct]):null;
+    raw.push({nome,label,jor,val,p});
+  }
+  if(!raw.length)return null;
+  /* percentual: Valor/Total quando houver; senão a coluna de %, decidindo fração × pontos só pelos motivos mapeados */
+  const ps=raw.map(x=>x.p).filter(x=>x!=null);
+  const frac=ps.length>0&&Math.max(...ps)<=1.0001;
+  const by={};let mapped=0;
+  for(const x of raw){
+    let pct=null;
+    if(x.val!=null&&total)pct=x.val/total*100;
+    else if(x.p!=null)pct=frac?x.p*100:x.p;
+    if(pct==null||!isFinite(pct))continue;
     mapped++;
-    const g=by[jor]||(by[jor]=new Map());
-    const k=norm(label),o=g.get(k);
-    if(o){o.pct+=pct;if(val!=null)o.val=(o.val||0)+val}else g.set(k,{label,pct,val});
+    const g=by[x.jor]||(by[x.jor]=new Map());
+    const k=norm(x.label),o=g.get(k);
+    if(o){o.pct+=pct;if(x.val!=null)o.val=(o.val||0)+x.val;if(x.nome)o.nomes.push(x.nome)}
+    else g.set(k,{label:x.label,pct,val:x.val,nomes:x.nome?[x.nome]:[],jor:x.jor});
   }
   if(!mapped)return null;
   const journeys=Object.keys(by).map(t=>({title:t,items:[...by[t].values()].sort((a,b)=>b.pct-a.pct)}))
     .sort((a,b)=>b.items[0].pct-a.items[0].pct);
-  return{sheet,total,journeys,mapped};
+  return{total,journeys,mapped,hasNome:cols.nome!=null&&cols.val!=null};
 }
-function workbookToSheets(wb){
-  const out={};
-  wb.SheetNames.forEach(n=>{out[n]=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:""})});
-  return out;
+function extractJornadas(wb,dp){
+  let best=null;
+  for(const n of wb.SheetNames){
+    if(/de\s*para|apoio/i.test(n))continue;
+    const h=findHeader(rowsOf(wb,n,40));if(!h)continue;
+    const d=parseMotivos(rowsOf(wb,n),h,dp);if(!d)continue;
+    d.sheet=n;
+    const score=(d.hasNome?1e6:0)+d.mapped;
+    if(!best||score>best.score)best={...d,score};
+  }
+  return best;
+}
+/* Aba bruta do Verint (ex.: "Base DDD"): cabeçalho com Nº / ANI / MSISDN e uma coluna por categoria */
+function extractDDD(wb,uf){
+  for(const n of wb.SheetNames){
+    if(/de\s*para|apoio/i.test(n))continue;
+    const head=rowsOf(wb,n,400);
+    let hr=-1,ci={};
+    for(let r=0;r<head.length;r++){
+      const row=head[r]||[],m={};
+      row.forEach((c,i)=>{const s=norm(c);
+        if(s==="ani"&&m.ani==null)m.ani=i;
+        else if(s==="msisdn"&&m.ms==null)m.ms=i;
+        else if(s==="ddd cliente"&&m.dc==null)m.dc=i;});
+      if(m.ani!=null||m.ms!=null){hr=r;ci=m;break}
+    }
+    if(hr<0)continue;
+    const rows=rowsOf(wb,n),H=rows[hr];
+    const colOf=new Map();
+    H.forEach((c,i)=>{const k=norm(c);if(k&&!colOf.has(k))colOf.set(k,i)});
+    const data=[];
+    for(let r=hr+1;r<rows.length;r++){
+      const row=rows[r];if(!row||row.every(isEmpty))continue;
+      if(isEmpty(row[0])&&isEmpty(row[ci.ani])&&isEmpty(row[ci.ms]))continue;
+      data.push({row,d:dddOf(row[ci.ani],row[ci.ms],row[ci.dc],uf)});
+    }
+    if(!data.length)continue;
+    const rank={};data.forEach(x=>{if(x.d)rank[x.d]=(rank[x.d]||0)+1});
+    const idn=data.filter(x=>x.d).length;
+    /* data da extração (linhas antes do cabeçalho) */
+    let date=null,inter=null;
+    for(let r=0;r<hr;r++){
+      const row=rows[r]||[],k0=norm(row[0]);
+      if(inter==null&&/^interacoes\b/.test(k0))for(const c of row.slice(1)){const m=String(c).match(/^\s*([\d.]+)/);if(m){inter=+m[1].replace(/\./g,"");break}}
+      if(date)continue;
+      if(/data de inicio|data de termino|criado em/.test(norm(row[0])))
+        for(const c of row){const dt=toISO(c);if(dt){date=dt;break}}
+    }
+    return{sheet:n,colOf,data,total:data.length,inter:inter||null,idn,rank,date};
+  }
+  return null;
+}
+/* Sem aba bruta: aproveita uma aba já calculada com "Resumo para o report" (ex.: "DDD x Motivo") */
+function extractResumo(wb){
+  const out=new Map();let sheet=null,inter=null;
+  for(const n of wb.SheetNames){
+    if(/apoio/i.test(n))continue;
+    const rows=rowsOf(wb,n,400);let cm=-1,cr=-1;
+    rows.forEach(row=>{
+      if(inter==null&&/^interacoes na extracao/.test(norm(row&&row[0])))for(const c of row.slice(1))if(typeof c==="number"&&c>0){inter=c;break}
+      (row||[]).forEach((c,i)=>{const s=norm(c);if(/^motivo/.test(s))cm=i;if(/resumo/.test(s))cr=i});
+      if(cm>=0&&cr>=0&&row[cm]&&row[cr]&&!/^motivo/.test(norm(row[cm]))){
+        const top=[];String(row[cr]).replace(/(\d{2})\s*-\s*([A-Z]{2})\s*\((\d+(?:[.,]\d+)?)%\)/g,(_,d,u,p)=>{top.push({d,uf:u,p:parseFloat(p.replace(",",".")),q:null})});
+        if(top.length){out.set(norm(row[cm]),top);sheet=n}
+      }
+    });
+  }
+  return out.size?{sheet,map:out,inter}:null;
+}
+function toISO(v){
+  if(v instanceof Date&&!isNaN(v))return v.getFullYear()+"-"+String(v.getMonth()+1).padStart(2,"0")+"-"+String(v.getDate()).padStart(2,"0");
+  const m=String(v||"").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m?m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0"):null;
+}
+function readDeParaDDD(wb){
+  const uf={...DDD_UF};
+  const n=wb.SheetNames.find(s=>/de\s*para/i.test(s)&&/ddd/i.test(s));
+  if(n)rowsOf(wb,n).forEach((r,i)=>{const d=digits(r[0]);if(i&&d.length===2&&/^[A-Z]{2}$/.test(txt(r[1])))uf[d]=txt(r[1])});
+  return uf;
+}
+function attachDDD(data,raw,resumo,dp,uf){
+  let ok=0,miss=0;
+  for(const j of data.journeys)for(const it of j.items){
+    it.ddd=null;
+    if(raw){
+      let names=it.nomes.length?it.nomes:(dp.rev[norm(it.label)+"|"+norm(it.jor)]||[]);
+      const cols=[...new Set(names.map(nm=>raw.colOf.get(norm(nm))).filter(c=>c!=null))];
+      if(cols.length){
+        const cnt={};let n=0,ni=0;
+        for(const x of raw.data){
+          if(!cols.some(c=>!isEmpty(x.row[c])))continue;
+          if(x.d){cnt[x.d]=(cnt[x.d]||0)+1;n++}else ni++;
+        }
+        const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||a.localeCompare(b)).slice(0,3)
+          .map(d=>({d,uf:uf[d]||"",q:cnt[d],p:cnt[d]/n*100}));
+        it.ddd={n,ni,top};ok++;continue;
+      }
+    }
+    if(resumo){const t=resumo.map.get(norm(it.label));if(t){it.ddd={n:null,ni:0,top:t};ok++;continue}}
+    if(raw||resumo)miss++;
+  }
+  return{ok,miss};
 }
 
 /* ================= boletins e arquivos ================= */
 const BOL=[
   {k:"massivo",t:"BOLETIM N1 MASSIVO",tab:"N1 Massivo",re:/massivo/},
   {k:"combo",  t:"BOLETIM N1 COMBO",  tab:"N1 Combo",  re:/combo/},
-  {k:"crc",    t:"BOLETIM CRC",       tab:"CRC",       re:/crc/},
+  {k:"crc",    t:"BOLETIM CRC",       tab:"CRC",       re:/\bcrc\b|crc/},
   {k:"ret",    t:"RETENÇÃO",          tab:"Retenção",  re:/reten/}
 ];
-let FILES=[],NEXT=1,ACTIVE=null,LAST=null,GEN=false;
+let FILES=[],NEXT=1,ACTIVE=null,LAST=null,GEN=false,DATE_TOUCHED=false;
 const V={q:"",all:false,zeros:false};
 
+function parseWorkbook(buf){
+  const base={type:"array",cellDates:true,cellFormula:false,cellHTML:false,cellText:false};
+  let names=null;
+  try{names=XLSX.read(buf,{type:"array",bookSheets:true}).SheetNames}catch(e){}
+  /* abas auxiliares enormes (ex.: "Apoio DDD" com 20 mil linhas de fórmula) não são necessárias */
+  const keep=names&&names.length>1?names.filter(n=>!/^apoio/i.test(n)):null;
+  return XLSX.read(buf,keep&&keep.length?{...base,sheets:keep}:base);
+}
 function readFile(f){return new Promise(res=>{
   const rd=new FileReader();
   rd.onerror=()=>res({name:f.name,data:null,err:"não consegui abrir o arquivo (ele pode estar aberto em outro programa)"});
-  rd.onload=e=>{try{
-    const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
-    const data=extractJornadas(workbookToSheets(wb));
-    res({name:f.name,sheetNames:wb.SheetNames,data,err:data?null:"não achei colunas de Motivo, Percentual e Jornada (abas: "+wb.SheetNames.join(", ")+")"});
-  }catch(err){res({name:f.name,data:null,err:"formato não reconhecido ("+(err&&err.message||"erro")+")"})}};
+  rd.onload=e=>{
+    let wb;
+    try{wb=parseWorkbook(new Uint8Array(e.target.result))}
+    catch(err){res({name:f.name,data:null,err:"formato não reconhecido ("+(err&&err.message||"erro")+")"});return}
+    try{
+      const dp=readDePara(wb);
+      const data=extractJornadas(wb,dp);
+      if(!data){res({name:f.name,sheetNames:wb.SheetNames,data:null,err:"não achei colunas de Motivo, Percentual e Jornada (abas: "+wb.SheetNames.join(", ")+")"});return}
+      let dd=null,warn=null;
+      try{
+        const uf=readDeParaDDD(wb),raw=extractDDD(wb,uf),resumo=raw?null:extractResumo(wb);
+        if(raw||resumo){
+          const r=attachDDD(data,raw,resumo,dp,uf);
+          dd={src:raw?"bruta":"resumo",sheet:raw?raw.sheet:resumo.sheet,total:raw?raw.total:null,inter:raw?raw.inter:(resumo.inter||null),idn:raw?raw.idn:null,
+              rank:raw?raw.rank:null,date:raw?raw.date:null,ok:r.ok,miss:r.miss};
+        }
+      }catch(err){warn="não consegui ler o DDD ("+(err&&err.message||"erro")+")"}
+      res({name:f.name,sheetNames:wb.SheetNames,data,dd,warn,err:null});
+    }catch(err){res({name:f.name,data:null,err:"erro ao ler os dados ("+(err&&err.message||"erro")+")"})}
+  };
   rd.readAsArrayBuffer(f);
 })}
 function detectKey(r){
@@ -320,11 +488,14 @@ function detectKey(r){
   const b=BOL.find(b=>b.re.test(s));return b?b.k:null;
 }
 function autoAssign(){
+  const ok=FILES.filter(x=>x.data);
+  /* um arquivo sozinho vale para os 4; quando chega outro, ele volta a ocupar um boletim só */
+  if(ok.length>1)ok.filter(f=>f.assign==="all"&&f.autoAll).forEach(f=>{f.assign=null;f.autoAll=false});
   FILES.filter(f=>f.assign==null).forEach(f=>{
     if(!f.data){f.assign="skip";return}
     const k=detectKey(f);
     if(k){f.assign=k;return}
-    if(FILES.filter(x=>x.data).length===1){f.assign="all";return}
+    if(ok.length===1){f.assign="all";f.autoAll=true;return}
     const used=new Set(FILES.filter(x=>x.assign&&x.assign!=="all"&&x.assign!=="skip").map(x=>x.assign));
     const free=BOL.find(b=>!used.has(b.k));
     f.assign=free?free.k:"skip";
@@ -345,6 +516,10 @@ async function addFiles(list){
     r.id=NEXT++;r.assign=null;FILES.push(r);
   }
   autoAssign();ACTIVE=null;
+  if(!DATE_TOUCHED){
+    const ds=FILES.map(f=>f.dd&&f.dd.date).filter(Boolean);
+    if(ds.length){const c={};ds.forEach(d=>c[d]=(c[d]||0)+1);$("dt").value=Object.keys(c).sort((a,b)=>c[b]-c[a])[0];$("dtSrc").textContent="lida do arquivo"}
+  }
   const bad=FILES.filter(f=>f.err).length;
   status(FILES.length+" arquivo(s) na lista"+(bad?" · "+bad+" com problema":""),!!bad&&bad===FILES.length);
   refresh();
@@ -354,11 +529,17 @@ async function addFiles(list){
 function barRow(i,k,max){
   const w=Math.max(2,i.pct/max*100);
   const v=i.val!=null?`<small>${fint(i.val)}</small>`:"";
-  return `<div class="row${k===0?" top":""}"><div class="rl"><span>${esc(i.label)}</span><span>${v}${fmt(i.pct)}</span></div><div class="bar"><i style="width:${w}%"></i></div></div>`;
+  const dd=i.ddd&&i.ddd.top.length?`<div class="dd">DDD: ${i.ddd.top.map(t=>esc(dddStr(t))).join(" · ")}${i.ddd.n!=null?` <span>(${fint(i.ddd.n)} interações)</span>`:""}</div>`:"";
+  return `<div class="row${k===0?" top":""}"><div class="rl"><span>${esc(i.label)}</span><span>${v}${fmt(i.pct)}</span></div><div class="bar"><i style="width:${w}%"></i></div>${dd}</div>`;
+}
+function dddInfo(f){
+  if(f.warn)return " · "+esc(f.warn);
+  if(!f.dd)return " · sem aba de DDD";
+  return f.dd.src==="bruta"?` · DDD: ${fint(f.dd.idn)} de ${fint(f.dd.total)} interações (aba ${esc(f.dd.sheet)})`:` · DDD do resumo (aba ${esc(f.dd.sheet)})`;
 }
 function renderFiles(){
   $("files").innerHTML=FILES.map(f=>{
-    const info=f.err?esc(f.err):`aba ${esc(f.data.sheet)} · ${f.data.mapped} motivos`+(f.data.total?` · ${fint(f.data.total)} ligações`:"");
+    const info=f.err?esc(f.err):`aba ${esc(f.data.sheet)} · ${f.data.mapped} motivos`+(totalOf(f)?` · ${fint(totalOf(f))} interações`:"")+dddInfo(f);
     const opts=BOL.map(b=>`<option value="${b.k}"${f.assign===b.k?" selected":""}>${b.tab}</option>`).join("")+
       `<option value="all"${f.assign==="all"?" selected":""}>Todos os boletins</option><option value="skip"${f.assign==="skip"?" selected":""}>Ignorar</option>`;
     return `<div class="f${f.err?" bad":""}" data-id="${f.id}"><div class="fi"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${info}</small></div>`+
@@ -375,10 +556,15 @@ function renderData(){
   const d=f.data,q=norm(V.q);
   const all=d.journeys.flatMap(j=>j.items.map(i=>({...i,j:j.title})));
   const top=all.reduce((m,i)=>i.pct>m.pct?i:m,all[0]);
+  let kd=`<div><span>DDD</span><b>—</b><small>${f.warn?esc(f.warn):"arquivo sem aba de DDD"}</small></div>`;
+  if(f.dd&&f.dd.src==="bruta"){
+    const r=f.dd.rank,k0=Object.keys(r).sort((a,b)=>r[b]-r[a])[0];
+    kd=`<div><span>DDD identificado</span><b>${fint(f.dd.idn)}</b><small>de ${fint(f.dd.total)} interações${k0?` · principal ${k0} (${fmtI(r[k0]/f.dd.idn*100)})`:""}</small></div>`;
+  }else if(f.dd)kd=`<div><span>DDD</span><b>${f.dd.ok}</b><small>motivos com DDD (resumo da aba ${esc(f.dd.sheet)})</small></div>`;
   $("kp").innerHTML=
-    `<div><span>Total de ligações</span><b>${d.total?fint(d.total):"—"}</b><small>${esc(f.name)}</small></div>`+
+    `<div><span>Total de interações</span><b>${totalOf(f)?fint(totalOf(f)):"—"}</b><small>${f.dd&&f.dd.src==="bruta"?"extração (aba "+esc(f.dd.sheet)+")":"aba "+esc(d.sheet)}${d.total&&d.total!==totalOf(f)?" · report: "+fint(d.total):""}</small></div>`+
     `<div><span>Maior motivo</span><b>${fmt(top.pct)}</b><small>${esc(top.label)} · ${esc(top.j)}</small></div>`+
-    `<div><span>Motivos com ocorrência</span><b>${all.filter(i=>i.pct>0).length}</b><small>de ${all.length} em ${d.journeys.length} jornadas</small></div>`;
+    `<div><span>Motivos com ocorrência</span><b>${all.filter(i=>i.pct>0).length}</b><small>de ${all.length} em ${d.journeys.length} jornadas</small></div>`+kd;
   const cards=d.journeys.map(j=>{
     const items=j.items.filter(i=>(V.zeros||i.pct>0)&&(!q||norm(i.label).includes(q)));
     if(!items.length)return"";
@@ -396,7 +582,7 @@ function renderSide(){
   const act=ACTIVE?fileFor(ACTIVE):null;
   $("n1").textContent=ok;$("n1").className=ok?"on":"";
   $("n2").textContent=filled.length+"/4";$("n2").className=filled.length?"on":"";
-  $("n3").textContent=act&&act.data.total?fint(act.data.total):"—";$("n3").className=act&&act.data.total?"on":"";
+  $("n3").textContent=totalOf(act)?fint(totalOf(act)):"—";$("n3").className=totalOf(act)?"on":"";
   $("sT").textContent=ok?(filled.length===4?"Todos os boletins preenchidos":filled.length+" de 4 boletins preenchidos"):"Nenhum arquivo carregado";
   $("sT").className=ok?"on":"";
   $("sS").textContent=ok?(missing.length?"Faltam: "+missing.join(", "):"Pronto para gerar a imagem"):"Carregue os arquivos no passo 1";
@@ -404,7 +590,11 @@ function renderSide(){
   $("pill").className="pill"+(ready&&filled.length===4?" ok":"");
   $("c1").className="ci"+(ok?" ok":"");$("c1s").textContent=ok?ok+" arquivo(s) lido(s) com sucesso":"Carregue os arquivos no passo 1";
   $("c2").className="ci"+(filled.length===4?" ok":"");$("c2s").textContent=filled.length?(missing.length?"Sem arquivo: "+missing.join(", "):"Os 4 boletins têm dados"):"Nenhum boletim preenchido";
-  $("c3").className="ci"+(hasDate?" ok":"");$("c3s").textContent=hasDate?$("dt").value.split("-").reverse().join("/"):"Informe a data no passo 1";
+  const wD=filled.filter(b=>fileFor(b.k).dd),woD=filled.filter(b=>!fileFor(b.k).dd);
+  $("c4").className="ci"+(filled.length&&!woD.length?" ok":"");
+  $("c4s").textContent=!filled.length?"Carregue os arquivos no passo 1":!wD.length?"Nenhum arquivo traz DDD · a imagem sai sem a coluna":
+    (woD.length?"Com DDD: "+wD.map(b=>b.tab).join(", ")+" · sem DDD: "+woD.map(b=>b.tab).join(", "):"Todos os boletins com DDD");
+  $("c3").className="ci"+(hasDate?" ok":"");$("c3s").textContent=hasDate?$("dt").value.split("-").reverse().join("/")+($("dtSrc").textContent?" ("+$("dtSrc").textContent+")":""):"Informe a data no passo 1";
   $("gen").disabled=!ready;
   $("s2").classList.toggle("locked",!ok);$("s3").classList.toggle("locked",!ok);
 }
@@ -419,46 +609,134 @@ function pickData(data){
   const top2=f=>{const j=data.journeys.find(f);return j?{title:j.title,items:j.items.filter(i=>i.pct>0).slice(0,2)}:null};
   return{rest,ex:top2(isEx),ca:top2(isCa)};
 }
-function layoutSpec(){
+function layoutSpec(withCa){
   const L=[{t:"blank"}];
   for(let n=0;n<5;n++)L.push({t:"item",s:"rest",n});
-  [["ex","Experiência do Cliente"],["ca","Cancelamento"]].forEach(([s,def])=>{
-    L.push({t:"blank"},{t:"blank"},{t:"sec",s,def},{t:"blank"},{t:"item",s,n:0},{t:"item",s,n:1});
-  });
+  const secs=[["ex","Experiência do Cliente"]];if(withCa)secs.push(["ca","Cancelamento"]);
+  secs.forEach(([s,def])=>L.push({t:"blank"},{t:"blank"},{t:"sec",s,def},{t:"blank"},{t:"item",s,n:0},{t:"item",s,n:1}));
   return L;
 }
+function itemAt(d,l){return l.s==="rest"?d.rest[l.n]:(d[l.s]&&d[l.s].items[l.n])}
+function fitText(x,s,w){
+  if(x.measureText(s).width<=w)return s;
+  while(s.length>1&&x.measureText(s+"…").width>w)s=s.slice(0,-1);
+  return s.trimEnd()+"…";
+}
+/* total do quadrado vermelho = interações da extração (Base DDD); sem ela, o total da aba Base */
+function totalOf(f){return f?((f.dd&&(f.dd.inter||f.dd.total))||f.data.total||null):null}
+function rr(x,X,Y,w,h,r){r=Math.min(r,w/2,h/2);x.beginPath();x.moveTo(X+r,Y);x.arcTo(X+w,Y,X+w,Y+h,r);x.arcTo(X+w,Y+h,X,Y+h,r);x.arcTo(X,Y+h,X,Y,r);x.arcTo(X,Y,X+w,Y,r);x.closePath()}
 function gerar(scroll){
-  const cols=BOL.map(b=>{const f=fileFor(b.k);return{b,d:f?pickData(f.data):null,total:f?f.data.total:null}});
+  const showD=$("optDDD").checked,withCa=$("optCa").checked;
+  const cols=BOL.map(b=>{const f=fileFor(b.k);return{b,f,d:f?pickData(f.data):null,total:totalOf(f)}});
   if(!cols.some(c=>c.d))return;
-  const dd=dateLabel(),L=layoutSpec();
-  const colW=330,gap=36,pad=18,rowH=21,headH=48,boxW=64,RED="#A90000";
-  const W=pad*2+colW*4+gap*3,H=pad+headH+L.length*rowH+pad,K=2;
+  const secs=[{k:"rest",t:"Top 5 motivos",n:5}];
+  secs.push({k:"ex",t:"Experiência do Cliente",n:2});if(withCa)secs.push({k:"ca",t:"Cancelamento",n:2});
+  const itemsOf=(d,k)=>!d?[]:k==="rest"?d.rest:(d[k]?d[k].items:[]);
+  const anyD=showD&&cols.some(c=>secs.some(s=>itemsOf(c.d,s.k).some(i=>i.ddd&&i.ddd.top.length)));
+  const RED="#A90000",RED_D="#7d0000",RED_L="#fbeaea",TX="#1c1f26",MUT="#6b7280",BD="#e5e7eb",TRK="#efe3e3";
+  const FF='Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif';
+  const PAD=28,TOPH=84,GAP=18,CW=414,CP=18,IND=30;
+  const rowH=anyD?62:42,CHEAD=78,SECH=36,SECGAP=12,FOOT=46;
+  const bodyH=secs.reduce((s,sc,i)=>s+(i?SECGAP:0)+SECH+sc.n*rowH,0);
+  const cardH=CHEAD+bodyH+14;
+  const W=PAD*2+CW*4+GAP*3,H=TOPH+PAD+cardH+FOOT,K=2;
   const c=document.createElement("canvas");c.width=W*K;c.height=H*K;
   const x=c.getContext("2d");x.scale(K,K);
-  x.fillStyle="#fff";x.fillRect(0,0,W,H);
-  const FF='"Aptos Narrow","Segoe UI",Calibri,Arial,sans-serif';
-  cols.forEach(({b,d,total},ci)=>{
-    const x0=pad+ci*(colW+gap);
-    x.fillStyle=RED;x.fillRect(x0+colW-boxW,pad,boxW,headH);
-    x.fillStyle="#fff";x.textAlign="center";x.textBaseline="middle";x.font="15px "+FF;
-    x.fillText(dd,x0+colW-boxW/2,pad+headH/2-10);
-    if(total)x.fillText(String(Math.round(total)),x0+colW-boxW/2,pad+headH/2+10);
-    x.textAlign="left";x.textBaseline="alphabetic";x.fillStyle=RED;x.font="bold 15px "+FF;
-    x.fillText(b.t,x0,pad+headH-8);
-    L.forEach((l,k)=>{
-      const y=pad+headH+k*rowH;
-      x.strokeStyle="#e3e3e3";x.lineWidth=1;x.beginPath();x.moveTo(x0,y+rowH-.5);x.lineTo(x0+colW,y+rowH-.5);x.stroke();
-      if(l.t==="item"){
-        if(!d){if(k===1){x.fillStyle="#9ca3af";x.font="italic 14px "+FF;x.textAlign="left";x.fillText("sem arquivo",x0,y+rowH-6)}return}
-        const it=l.s==="rest"?d.rest[l.n]:(d[l.s]&&d[l.s].items[l.n]);
-        if(!it)return;
-        x.fillStyle="#111";x.font="15px "+FF;x.textAlign="left";x.fillText(it.label,x0,y+rowH-6,colW-58);
-        x.textAlign="right";x.fillText(fmt(it.pct),x0+colW-10,y+rowH-6);
-      }else if(l.t==="sec"){
-        x.fillStyle=RED;x.font="15px "+FF;x.textAlign="left";x.fillText((d&&d[l.s]&&d[l.s].title)||l.def,x0,y+rowH-6);
+  const T=(s,X,Y,font,color,align)=>{x.font=font;x.fillStyle=color;x.textAlign=align||"left";x.textBaseline="alphabetic";x.fillText(s,X,Y)};
+  const dd=dateLabel(),dv=$("dt").value;
+
+  /* fundo + faixa do topo */
+  x.fillStyle="#f4f5f7";x.fillRect(0,0,W,H);
+  const g=x.createLinearGradient(0,0,0,TOPH);g.addColorStop(0,RED);g.addColorStop(1,RED_D);
+  x.fillStyle=g;x.fillRect(0,0,W,TOPH);
+  let lx=PAD;
+  const logo=(sel,h)=>{const im=document.querySelector(sel);if(!im||!im.complete||!im.naturalWidth)return;
+    const w=h*im.naturalWidth/im.naturalHeight;x.drawImage(im,lx,(TOPH-h)/2,w,h);lx+=w+16};
+  logo(".logo.claro",32);
+  x.fillStyle="rgba(255,255,255,.4)";x.fillRect(lx,TOPH/2-12,1,24);lx+=17;
+  logo(".logo.hitss",20);
+  x.fillStyle="rgba(255,255,255,.4)";x.fillRect(lx,TOPH/2-12,1,24);lx+=17;
+  T("Speech Analytics",lx,TOPH/2+5,"600 15px "+FF,"#fff");
+  const dLong=dv?(+dv.split("-")[2])+" de "+["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"][+dv.split("-")[1]-1]+" de "+dv.split("-")[0]:"";
+  T("Boletins de speech",W-PAD,TOPH/2-3,"700 20px "+FF,"#fff","right");
+  T(dLong,W-PAD,TOPH/2+17,"13px "+FF,"rgba(255,255,255,.85)","right");
+
+  /* cards */
+  cols.forEach((col,ci)=>{
+    const X=PAD+ci*(CW+GAP),Y=TOPH+PAD*0.75|0;
+    x.save();x.shadowColor="rgba(40,0,0,.08)";x.shadowBlur=14;x.shadowOffsetY=3;
+    rr(x,X,Y,CW,cardH,12);x.fillStyle="#fff";x.fill();x.restore();
+    rr(x,X,Y,CW,cardH,12);x.strokeStyle=BD;x.lineWidth=1;x.stroke();
+    x.save();rr(x,X,Y,CW,cardH,12);x.clip();x.fillStyle=col.d?RED:"#d1d5db";x.fillRect(X,Y,CW,4);x.restore();
+    /* cabeçalho: título + selo vermelho com data e interações */
+    const bw=104,bh=50,bx=X+CW-CP-bw,by=Y+16;
+    rr(x,bx,by,bw,bh,8);x.fillStyle=col.d?RED:"#d1d5db";x.fill();
+    T(dd,bx+bw/2,by+21,"700 15px "+FF,"#fff","center");
+    T(col.total?fint(col.total)+" interações":"—",bx+bw/2,by+39,"500 11.5px "+FF,"rgba(255,255,255,.9)","center");
+    x.font="800 16px "+FF;
+    T(fitText(x,col.b.t,CW-CP*2-bw-10),X+CP,Y+38,"800 16px "+FF,col.d?RED:"#9ca3af");
+    T(col.d?"Top motivos do dia":"Sem arquivo carregado",X+CP,Y+57,"12px "+FF,MUT);
+    x.fillStyle=BD;x.fillRect(X+CP,Y+CHEAD,CW-CP*2,1);
+    let y=Y+CHEAD;
+    if(!col.d){
+      T("Sem arquivo para este boletim",X+CW/2,Y+CHEAD+bodyH/2,"italic 14px "+FF,"#9ca3af","center");
+      return;
+    }
+    secs.forEach((sc,si)=>{
+      if(si){y+=SECGAP;x.fillStyle=BD;x.fillRect(X+CP,y-SECGAP/2,CW-CP*2,1)}
+      /* título da seção */
+      x.font="700 11px "+FF;
+      const lab=sc.t.toLocaleUpperCase("pt-BR");
+      try{x.letterSpacing="0.8px"}catch(e){}
+      T(lab,X+CP,y+24,"700 11px "+FF,si?RED:MUT);
+      const lw=x.measureText(lab).width;
+      try{x.letterSpacing="0px"}catch(e){}
+      x.fillStyle="#f0f1f3";x.fillRect(X+CP+lw+14,y+20,CW-CP*2-lw-14,1);
+      y+=SECH;
+      const items=itemsOf(col.d,sc.k);
+      for(let n=0;n<sc.n;n++){
+        const it=items[n],ry=y+n*rowH;
+        if(!it){if(n===0)T("Sem ocorrências",X+CP+IND,ry+16,"italic 13px "+FF,"#9ca3af");continue}
+        /* posição */
+        rr(x,X+CP,ry+2,20,20,6);x.fillStyle=n===0?RED:"#f3f4f6";x.fill();
+        T(String(n+1),X+CP+10,ry+16,"700 11px "+FF,n===0?"#fff":MUT,"center");
+        /* motivo e % */
+        const pctS=fmtI(it.pct);
+        x.font="800 15px "+FF;const pw=x.measureText(pctS).width;
+        x.font="600 14px "+FF;
+        T(fitText(x,it.label,CW-CP*2-IND-pw-12),X+CP+IND,ry+16,"600 14px "+FF,TX);
+        T(pctS,X+CW-CP,ry+17,"800 15px "+FF,RED,"right");
+        /* medidor de linha (escala 0–100%) */
+        const mx=X+CP+IND,mw=CW-CP*2-IND,my=ry+25;
+        rr(x,mx,my,mw,7,3.5);x.fillStyle=TRK;x.fill();
+        x.fillStyle="#fff";[.25,.5,.75].forEach(t=>x.fillRect(mx+mw*t,my,1.5,7));
+        const fw=Math.max(5,Math.min(1,it.pct/100)*mw);
+        rr(x,mx,my,fw,7,3.5);x.fillStyle=n===0?RED:"rgba(169,0,0,.72)";x.fill();
+        /* DDD em chips */
+        if(anyD&&it.ddd&&it.ddd.top.length){
+          let cx=mx;const cy=ry+39,ch=18;
+          T("DDD",cx,cy+13,"700 10px "+FF,"#9ca3af");cx+=28;
+          it.ddd.top.forEach((t,k)=>{
+            const s=t.d+" · "+t.uf+"  "+fmtI(t.p);
+            x.font=(k?"500":"700")+" 11.5px "+FF;
+            const w=x.measureText(s).width+14;
+            if(cx+w>X+CW-CP)return;
+            rr(x,cx,cy,w,ch,9);x.fillStyle=k?"#f3f4f6":RED_L;x.fill();
+            T(s,cx+7,cy+13,(k?"500":"700")+" 11.5px "+FF,k?"#374151":RED_D);
+            cx+=w+6;
+          });
+        }
       }
+      y+=sc.n*rowH;
     });
   });
+
+  /* rodapé */
+  const fy=H-FOOT/2+4;
+  T("% sobre o report do speech  ·  medidor em escala de 0 a 100%"+(anyD?"  ·  DDD: 3 regiões com mais interações em cada motivo":""),PAD,fy,"11.5px "+FF,MUT);
+  const now=new Date();
+  T("Claro × Global HITSS  ·  gerado em "+now.toLocaleDateString("pt-BR")+" "+now.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),W-PAD,fy,"11.5px "+FF,MUT,"right");
+
   const name="speech-analytics_"+dd.replace("/","-")+".png";
   c.toBlob(bl=>{
     LAST={blob:bl,name};GEN=true;
@@ -486,7 +764,7 @@ d.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
 ["dragover","drop"].forEach(ev=>window.addEventListener(ev,e=>e.preventDefault()));
 $("files").addEventListener("change",e=>{
   const row=e.target.closest(".f");if(!row||e.target.tagName!=="SELECT")return;
-  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;ACTIVE=null;refresh()}
+  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;f.autoAll=false;ACTIVE=null;refresh()}
 });
 $("files").addEventListener("click",e=>{
   const row=e.target.closest(".f");if(!row||!e.target.classList.contains("x"))return;
@@ -497,11 +775,13 @@ $("tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)re
 $("q").oninput=e=>{V.q=e.target.value;renderData()};
 $("zeros").onchange=e=>{V.zeros=e.target.checked;renderData()};
 $("all").onclick=()=>{V.all=!V.all;$("all").textContent=V.all?"Ver só os principais":"Ver todos os motivos";renderData()};
+$("dt").oninput=()=>{DATE_TOUCHED=true;$("dtSrc").textContent=""};
 $("dt").onchange=refresh;
+$("optDDD").onchange=$("optCa").onchange=()=>{if(GEN)gerar(false)};
 $("gen").onclick=()=>gerar(true);
 $("dl").onclick=$("dl2").onclick=baixar;
 $("cp").onclick=copiar;
-$("dt").value=new Date().toISOString().slice(0,10);
+(()=>{const t=new Date();$("dt").value=t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0")})();
 refresh();
 </script>
 </body>
