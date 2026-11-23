@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Speech Analytics · Claro × HITSS Global</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{color-scheme:light;
+--red:#A90000;--red-d:#7d0000;--red-l:#fbeaea;--bg:#f3f4f6;--card:#fff;--tx:#1c1f26;--mut:#6b7280;--bd:#e5e7eb;--soft:#f8f9fb;--bar:#f1e4e4}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;font-size:14px;min-height:100vh}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+
+/* hero */
+.hero{background:linear-gradient(180deg,var(--red) 0%,var(--red-d) 100%);color:#fff;padding:env(safe-area-inset-top,0px) 20px 112px}
+.hero-in{max-width:1180px;margin:0 auto}
+.nav{display:flex;align-items:center;gap:14px;padding:16px 0 14px;border-bottom:1px solid rgba(255,255,255,.22)}
+.claro{font-weight:800;font-size:26px;letter-spacing:-1px;display:flex;align-items:center;gap:6px}
+.claro i{width:11px;height:11px;border-radius:50%;background:#fff;display:inline-block}
+.hitss{font-weight:800;font-size:14px;letter-spacing:1px;opacity:.9}
+.vr{width:1px;height:20px;background:rgba(255,255,255,.35)}
+.nav b{font-size:14px}
+.hero h1{margin:34px 0 8px;font-size:32px;font-weight:700;letter-spacing:-.5px}
+.hero p{margin:0;max-width:560px;line-height:1.5;opacity:.92}
+
+/* layout */
+.wrap{max-width:1180px;margin:-78px auto 40px;padding:0 20px;display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}
+@media(max-width:920px){.wrap{grid-template-columns:1fr}.hero h1{font-size:26px}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.step{background:var(--card);border:1px solid var(--bd);border-radius:14px;box-shadow:0 6px 18px rgba(30,0,0,.07);overflow:hidden;transition:opacity .2s}
+.step.locked{opacity:.5;pointer-events:none;box-shadow:none}
+.sh{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--bd)}
+.n{width:24px;height:24px;border-radius:6px;background:var(--bg);color:var(--mut);font-weight:700;font-size:12px;display:grid;place-items:center;flex:none}
+.step:not(.locked) .n{background:var(--red);color:#fff}
+.sh b{display:block;font-size:15px}
+.sh small{color:var(--mut);font-size:12px}
+.sh .tag{margin-left:auto;font-size:11px;color:var(--mut);background:var(--bg);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.sb{padding:18px 20px 20px}
+
+/* upload */
+#drop{border:1.5px dashed #c9a3a3;background:var(--soft);border-radius:12px;padding:26px 16px;text-align:center;cursor:pointer;transition:.15s}
+#drop:hover,#drop.over{border-color:var(--red);background:var(--red-l)}
+#drop .ic{width:40px;height:40px;margin:0 auto 10px;border-radius:10px;background:#fff;border:1px solid var(--bd);display:grid;place-items:center;color:var(--red)}
+#drop strong{display:block;font-size:14px}
+#drop span{font-size:12px;color:var(--mut)}
+#status{margin-top:10px;font-size:12px;color:var(--mut);min-height:16px}
+#status.err{color:var(--red);font-weight:600}
+#files{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.f{display:flex;align-items:center;gap:12px;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;background:#fff;flex-wrap:wrap}
+.f.bad{border-color:#e6b3b3;background:var(--red-l)}
+.fi{flex:1 1 220px;min-width:0}
+.fi b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi small{color:var(--mut);font-size:12px}
+.f.bad .fi small{color:var(--red)}
+select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px solid var(--bd);border-radius:8px;padding:7px 9px;background:#fff;color:var(--tx)}
+.x{border:0;background:transparent;color:var(--mut);font-size:18px;line-height:1;padding:4px 8px;border-radius:6px}
+.x:hover{background:var(--bg);color:var(--red)}
+.row2{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--bd)}
+.row2 label{display:flex;align-items:center;gap:8px;color:var(--mut);font-size:13px}
+
+/* dados */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tab{border:1px solid var(--bd);background:#fff;color:var(--tx);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
+.tab.on{background:var(--red);border-color:var(--red);color:#fff}
+.tab.off{color:#9ca3af;font-weight:500}
+.tab.off.on{background:#6b7280;border-color:#6b7280;color:#fff}
+.kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.kp div{background:var(--soft);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}
+.kp span{display:block;font-size:12px;color:var(--mut)}
+.kp b{display:block;font-size:20px;color:var(--red);margin-top:2px}
+.kp small{display:block;font-size:12px;color:var(--mut);margin-top:1px;overflow-wrap:anywhere}
+.tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.tools label{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:13px}
+.tools .sp{flex:1}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--bd);border-radius:12px;overflow:hidden;background:#fff}
+.ch{background:var(--red);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.ch b{font-size:13px}
+.ch em{font-style:normal;font-size:11px;background:rgba(255,255,255,.2);border-radius:6px;padding:2px 8px;white-space:nowrap}
+.cb{padding:12px 14px 14px}
+.row{margin-bottom:9px}
+.rl{display:flex;justify-content:space-between;font-size:13px;gap:10px}
+.rl span:first-child{overflow-wrap:anywhere}
+.rl span:last-child{font-weight:700;color:var(--red);white-space:nowrap}
+.rl small{color:var(--mut);font-weight:400;margin-right:6px}
+.bar{height:7px;border-radius:5px;background:var(--bar);margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:5px;background:var(--red);opacity:.5}
+.row.top .bar i{opacity:1}
+.row.top .rl span:first-child{font-weight:700}
+.more{font-size:12px;color:var(--mut);padding-top:8px;border-top:1px solid var(--bd)}
+.empty{padding:28px;text-align:center;color:var(--mut)}
+
+/* imagem */
+#pv{border:1px solid var(--bd);border-radius:10px;background:#fff;overflow-x:auto}
+#pv img{display:block;width:100%;min-width:760px}
+.ph{padding:30px;text-align:center;color:var(--mut)}
+.acts{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.acts span{font-size:12px;color:var(--mut)}
+.btn{border:0;border-radius:10px;padding:10px 16px;background:var(--red);color:#fff;font-weight:600}
+.btn:hover:not(:disabled){background:var(--red-d)}
+.btn.g{background:#fff;color:var(--red);border:1px solid var(--red)}
+.btn.g:hover:not(:disabled){background:var(--red-l)}
+.btn:disabled{background:#e5e7eb;color:#9ca3af;border-color:transparent;cursor:not-allowed}
+.btn.w{width:100%}
+
+/* sidebar */
+.side{background:var(--card);border:1px solid var(--bd);border-radius:14px;box-shadow:0 6px 18px rgba(30,0,0,.07);position:sticky;top:16px;overflow:hidden}
+@media(max-width:920px){.side{position:static}}
+.sd1{padding:16px 18px 14px;border-bottom:1px solid var(--bd)}
+.sd1 .t{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--mut)}
+.pill{font-size:11px;background:var(--bg);color:var(--mut);border-radius:999px;padding:3px 10px;font-weight:600}
+.pill.ok{background:var(--red-l);color:var(--red)}
+.sd1 h3{margin:10px 0 2px;font-size:15px;color:var(--mut)}
+.sd1 h3.on{color:var(--tx)}
+.sd1 small{font-size:12px;color:var(--mut)}
+.st{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--bd)}
+.st div{padding:12px 16px;border-right:1px solid var(--bd)}
+.st div:last-child{border:0}
+.st b{display:block;font-size:20px;color:#b9bec7}
+.st b.on{color:var(--red)}
+.st span{font-size:12px;color:var(--mut)}
+.ck{padding:14px 18px;border-bottom:1px solid var(--bd)}
+.ck h4{margin:0 0 10px;font-size:12px;color:var(--mut);font-weight:600}
+.ci{display:flex;gap:10px;margin-bottom:10px}
+.ci:last-child{margin:0}
+.dot{width:16px;height:16px;border-radius:50%;border:1.5px solid #c4c9d2;flex:none;margin-top:1px;display:grid;place-items:center;color:#fff;font-size:10px}
+.ci.ok .dot{background:var(--red);border-color:var(--red)}
+.ci b{display:block;font-size:13px}
+.ci small{font-size:12px;color:var(--mut)}
+.sd3{padding:14px 18px 16px;display:flex;flex-direction:column;gap:10px}
+.sd3 hr{border:0;border-top:1px dashed var(--bd);margin:2px 0}
+.sd3 small{font-size:12px;color:var(--mut)}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-in">
+    <div class="nav">
+      <div class="claro" aria-label="Claro"><i></i>Claro</div>
+      <div class="vr"></div>
+      <div class="hitss">HITSS GLOBAL</div>
+      <div class="vr"></div>
+      <b>Speech Analytics</b>
+    </div>
+    <h1>Gerador de boletins de speech</h1>
+    <p>Carregue os arquivos de cada boletim, confira os motivos e gere a imagem pronta pra enviar.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="col">
+
+    <section class="step" id="s1">
+      <div class="sh"><span class="n">1</span><div><b>Arquivos dos boletins</b><small>Excel (.xlsx, .xls) ou CSV. Pode selecionar vários de uma vez.</small></div></div>
+      <div class="sb">
+        <div id="drop" tabindex="0" role="button" aria-label="Carregar arquivos">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg></div>
+          <strong>Carregar arquivos dos boletins</strong>
+          <span>Arraste aqui ou clique para selecionar · lê todas as abas automaticamente</span>
+          <input type="file" id="file" multiple hidden>
+        </div>
+        <div id="status">Aguardando arquivos</div>
+        <div id="files"></div>
+        <div class="row2">
+          <label>Data de referência <input type="date" id="dt"></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="step locked" id="s2">
+      <div class="sh"><span class="n">2</span><div><b>Conferir os dados</b><small>Veja os motivos por jornada de cada boletim antes de gerar.</small></div></div>
+      <div class="sb">
+        <div class="tabs" id="tabs"></div>
+        <div class="kp" id="kp"></div>
+        <div class="tools">
+          <label>Buscar motivo <input type="text" id="q" placeholder="ex.: sem sinal"></label>
+          <label><input type="checkbox" id="zeros"> mostrar zerados</label>
+          <span class="sp"></span>
+          <button type="button" class="btn g" id="all">Ver todos os motivos</button>
+        </div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </section>
+
+    <section class="step locked" id="s3">
+      <div class="sh"><span class="n">3</span><div><b>Imagem do boletim</b><small>Top 5 de cada boletim, com o top 2 de Experiência do Cliente e Cancelamento abaixo.</small></div></div>
+      <div class="sb">
+        <div id="pv"><div class="ph">Clique em “Gerar imagem” no resumo ao lado.</div></div>
+        <div class="acts"><button type="button" class="btn" id="dl" disabled>Baixar PNG</button><button type="button" class="btn g" id="cp" disabled>Copiar imagem</button><span id="outMsg"></span></div>
+      </div>
+    </section>
+
+  </div>
+
+  <aside class="side" aria-label="Resumo">
+    <div class="sd1">
+      <div class="t"><span>Resumo da geração</span><span class="pill" id="pill">Em preenchimento</span></div>
+      <h3 id="sT">Nenhum arquivo carregado</h3>
+      <small id="sS">Carregue os arquivos no passo 1</small>
+    </div>
+    <div class="st">
+      <div><b id="n1">0</b><span>Arquivos</span></div>
+      <div><b id="n2">0/4</b><span>Boletins</span></div>
+      <div><b id="n3">—</b><span>Ligações</span></div>
+    </div>
+    <div class="ck">
+      <h4>Conferência</h4>
+      <div class="ci" id="c1"><span class="dot">✓</span><div><b>Arquivos lidos</b><small id="c1s">Carregue os arquivos no passo 1</small></div></div>
+      <div class="ci" id="c2"><span class="dot">✓</span><div><b>Boletins com dados</b><small id="c2s">Nenhum boletim preenchido</small></div></div>
+      <div class="ci" id="c3"><span class="dot">✓</span><div><b>Data de referência</b><small id="c3s">Informe a data no passo 1</small></div></div>
+    </div>
+    <div class="sd3">
+      <button type="button" class="btn w" id="gen" disabled>Gerar imagem</button>
+      <hr>
+      <button type="button" class="btn g w" id="dl2" disabled>Baixar PNG</button>
+      <small>Carregue ao menos um arquivo e informe a data para liberar.</small>
+    </div>
+  </aside>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+const fmt=n=>(n>0&&n<0.1)?"<0,1%":n.toFixed(1).replace(".",",")+"%";
+const fint=n=>Math.round(n).toLocaleString("pt-BR");
+const txt=v=>String(v==null?"":v).replace(/\s+/g," ").trim();
+function parseP(v){
+  if(typeof v==="number")return isFinite(v)?v:null;
+  const s=txt(v);if(!/\d/.test(s))return null;
+  const n=parseFloat(s.replace("%","").replace(/\./g,"").replace(",","."));
+  return isNaN(n)?null:n;
+}
+
+/* ================= leitura da planilha (Base / Dados Tratados) ================= */
+function findHeader(rows){
+  for(let r=0;r<Math.min(rows.length,15);r++){
+    const cols={};
+    rows[r].forEach((c,i)=>{
+      const s=norm(txt(c));if(!s)return;
+      if(/^nome\b/.test(s)&&cols.nome==null)cols.nome=i;
+      else if(/^valor|^qtd|^quantidade|^volume/.test(s)&&cols.val==null)cols.val=i;
+      else if(/percent|^%/.test(s)&&cols.pct==null)cols.pct=i;
+      else if(/nomenclatura|motivo/.test(s)&&cols.mot==null)cols.mot=i;
+      else if(/jornada/.test(s)&&cols.jor==null)cols.jor=i;
+    });
+    if(cols.jor!=null&&(cols.mot!=null||cols.nome!=null)&&(cols.pct!=null||cols.val!=null))return{r,cols};
+  }
+  return null;
+}
+function extractJornadas(sheets){
+  const names=Object.keys(sheets);
+  const dpName=names.find(n=>/depara/i.test(n)&&/hfc/i.test(n))||names.find(n=>/depara/i.test(n));
+  const dep={};
+  if(dpName)sheets[dpName].forEach((r,i)=>{if(i&&txt(r[0]))dep[norm(txt(r[0]))]=[txt(r[1]),txt(r[2])]});
+  const cands=names.map(n=>({n,h:findHeader(sheets[n])})).filter(x=>x.h);
+  if(!cands.length)return null;
+  cands.sort((a,b)=>((b.h.cols.val!=null&&b.h.cols.nome!=null)-(a.h.cols.val!=null&&a.h.cols.nome!=null)));
+  const {n:sheet,h}=cands[0],rows=sheets[sheet],{cols}=h;
+  let total=null;
+  for(let r=0;r<h.r&&total==null;r++)for(const c of rows[r]){if(typeof c==="number"&&c>0){total=c;break}}
+  const data=rows.slice(h.r+1);
+  const pcol=cols.pct!=null?data.map(r=>parseP(r[cols.pct])).filter(x=>x!=null):[];
+  const frac=pcol.length>0&&Math.max(...pcol)<=1;
+  const by={};let mapped=0;
+  for(const r of data){
+    const nome=cols.nome!=null?txt(r[cols.nome]):"";
+    let label=cols.mot!=null?txt(r[cols.mot]):"";
+    let jor=txt(r[cols.jor]);
+    if((!label||!jor)&&nome&&dep[norm(nome)]){label=label||dep[norm(nome)][0];jor=jor||dep[norm(nome)][1]}
+    if(!label||!jor)continue;
+    const val=cols.val!=null&&typeof r[cols.val]==="number"?r[cols.val]:null;
+    let pct=cols.pct!=null?parseP(r[cols.pct]):null;
+    if(pct!=null)pct=frac?pct*100:pct;
+    else if(val!=null&&total)pct=val/total*100;
+    if(pct==null)continue;
+    mapped++;
+    const g=by[jor]||(by[jor]=new Map());
+    const k=norm(label),o=g.get(k);
+    if(o){o.pct+=pct;if(val!=null)o.val=(o.val||0)+val}else g.set(k,{label,pct,val});
+  }
+  if(!mapped)return null;
+  const journeys=Object.keys(by).map(t=>({title:t,items:[...by[t].values()].sort((a,b)=>b.pct-a.pct)}))
+    .sort((a,b)=>b.items[0].pct-a.items[0].pct);
+  return{sheet,total,journeys,mapped};
+}
+function workbookToSheets(wb){
+  const out={};
+  wb.SheetNames.forEach(n=>{out[n]=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:""})});
+  return out;
+}
+
+/* ================= boletins e arquivos ================= */
+const BOL=[
+  {k:"massivo",t:"BOLETIM N1 MASSIVO",tab:"N1 Massivo",re:/massivo/},
+  {k:"combo",  t:"BOLETIM N1 COMBO",  tab:"N1 Combo",  re:/combo/},
+  {k:"crc",    t:"BOLETIM CRC",       tab:"CRC",       re:/crc/},
+  {k:"ret",    t:"RETENÇÃO",          tab:"Retenção",  re:/reten/}
+];
+let FILES=[],NEXT=1,ACTIVE=null,LAST=null,GEN=false;
+const V={q:"",all:false,zeros:false};
+
+function readFile(f){return new Promise(res=>{
+  const rd=new FileReader();
+  rd.onerror=()=>res({name:f.name,data:null,err:"não consegui abrir o arquivo (ele pode estar aberto em outro programa)"});
+  rd.onload=e=>{try{
+    const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
+    const data=extractJornadas(workbookToSheets(wb));
+    res({name:f.name,sheetNames:wb.SheetNames,data,err:data?null:"não achei colunas de Motivo, Percentual e Jornada (abas: "+wb.SheetNames.join(", ")+")"});
+  }catch(err){res({name:f.name,data:null,err:"formato não reconhecido ("+(err&&err.message||"erro")+")"})}};
+  rd.readAsArrayBuffer(f);
+})}
+function detectKey(r){
+  const s=norm(r.name+" "+(r.sheetNames||[]).join(" "));
+  const b=BOL.find(b=>b.re.test(s));return b?b.k:null;
+}
+function autoAssign(){
+  FILES.filter(f=>f.assign==null).forEach(f=>{
+    if(!f.data){f.assign="skip";return}
+    const k=detectKey(f);
+    if(k){f.assign=k;return}
+    if(FILES.filter(x=>x.data).length===1){f.assign="all";return}
+    const used=new Set(FILES.filter(x=>x.assign&&x.assign!=="all"&&x.assign!=="skip").map(x=>x.assign));
+    const free=BOL.find(b=>!used.has(b.k));
+    f.assign=free?free.k:"skip";
+  });
+}
+function fileFor(k){
+  const ok=FILES.filter(f=>f.data);
+  return ok.filter(f=>f.assign===k).pop()||ok.filter(f=>f.assign==="all").pop()||null;
+}
+function status(t,err){const s=$("status");s.textContent=t;s.className=err?"err":""}
+async function addFiles(list){
+  list=[...list];if(!list.length)return;
+  if(typeof XLSX==="undefined"){status("A biblioteca de leitura (SheetJS) não carregou. Verifique a conexão ou o bloqueio do cdnjs e recarregue a página.",true);return}
+  status("Lendo "+list.length+" arquivo(s)…");
+  for(const f of list){
+    const r=await readFile(f);
+    FILES=FILES.filter(x=>x.name!==r.name);
+    r.id=NEXT++;r.assign=null;FILES.push(r);
+  }
+  autoAssign();ACTIVE=null;
+  const bad=FILES.filter(f=>f.err).length;
+  status(FILES.length+" arquivo(s) na lista"+(bad?" · "+bad+" com problema":""),!!bad&&bad===FILES.length);
+  refresh();
+}
+
+/* ================= tela ================= */
+function barRow(i,k,max){
+  const w=Math.max(2,i.pct/max*100);
+  const v=i.val!=null?`<small>${fint(i.val)}</small>`:"";
+  return `<div class="row${k===0?" top":""}"><div class="rl"><span>${esc(i.label)}</span><span>${v}${fmt(i.pct)}</span></div><div class="bar"><i style="width:${w}%"></i></div></div>`;
+}
+function renderFiles(){
+  $("files").innerHTML=FILES.map(f=>{
+    const info=f.err?esc(f.err):`aba ${esc(f.data.sheet)} · ${f.data.mapped} motivos`+(f.data.total?` · ${fint(f.data.total)} ligações`:"");
+    const opts=BOL.map(b=>`<option value="${b.k}"${f.assign===b.k?" selected":""}>${b.tab}</option>`).join("")+
+      `<option value="all"${f.assign==="all"?" selected":""}>Todos os boletins</option><option value="skip"${f.assign==="skip"?" selected":""}>Ignorar</option>`;
+    return `<div class="f${f.err?" bad":""}" data-id="${f.id}"><div class="fi"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${info}</small></div>`+
+      (f.err?"":`<select aria-label="Boletim deste arquivo">${opts}</select>`)+
+      `<button type="button" class="x" aria-label="Remover arquivo" title="Remover">×</button></div>`;
+  }).join("");
+}
+function renderData(){
+  const has=BOL.filter(b=>fileFor(b.k));
+  if(!ACTIVE||!fileFor(ACTIVE))ACTIVE=has.length?has[0].k:null;
+  $("tabs").innerHTML=BOL.map(b=>`<button type="button" class="tab${fileFor(b.k)?"":" off"}${ACTIVE===b.k?" on":""}" data-k="${b.k}">${b.tab}${fileFor(b.k)?"":" · sem arquivo"}</button>`).join("");
+  const f=ACTIVE?fileFor(ACTIVE):null;
+  if(!f){$("kp").innerHTML="";$("grid").innerHTML='<div class="card empty" style="grid-column:1/-1">Nenhum arquivo atribuído a este boletim.</div>';return}
+  const d=f.data,q=norm(V.q);
+  const all=d.journeys.flatMap(j=>j.items.map(i=>({...i,j:j.title})));
+  const top=all.reduce((m,i)=>i.pct>m.pct?i:m,all[0]);
+  $("kp").innerHTML=
+    `<div><span>Total de ligações</span><b>${d.total?fint(d.total):"—"}</b><small>${esc(f.name)}</small></div>`+
+    `<div><span>Maior motivo</span><b>${fmt(top.pct)}</b><small>${esc(top.label)} · ${esc(top.j)}</small></div>`+
+    `<div><span>Motivos com ocorrência</span><b>${all.filter(i=>i.pct>0).length}</b><small>de ${all.length} em ${d.journeys.length} jornadas</small></div>`;
+  const cards=d.journeys.map(j=>{
+    const items=j.items.filter(i=>(V.zeros||i.pct>0)&&(!q||norm(i.label).includes(q)));
+    if(!items.length)return"";
+    const max=Math.max(...items.map(i=>i.pct),0.01);
+    const lim=(V.all||q)?items.length:8;
+    const more=items.length>lim?`<div class="more">+ ${items.length-lim} motivos (use “Ver todos os motivos”)</div>`:"";
+    return `<section class="card"><div class="ch"><b>${esc(j.title)}</b><em>${items.length} motivos</em></div><div class="cb">${items.slice(0,lim).map((i,k)=>barRow(i,k,max)).join("")}${more}</div></section>`;
+  }).join("");
+  $("grid").innerHTML=cards||'<div class="card empty" style="grid-column:1/-1">Nenhum motivo encontrado para esse filtro.</div>';
+}
+function renderSide(){
+  const ok=FILES.filter(f=>f.data).length,filled=BOL.filter(b=>fileFor(b.k));
+  const missing=BOL.filter(b=>!fileFor(b.k)).map(b=>b.tab);
+  const hasDate=!!$("dt").value,ready=filled.length>0&&hasDate;
+  const act=ACTIVE?fileFor(ACTIVE):null;
+  $("n1").textContent=ok;$("n1").className=ok?"on":"";
+  $("n2").textContent=filled.length+"/4";$("n2").className=filled.length?"on":"";
+  $("n3").textContent=act&&act.data.total?fint(act.data.total):"—";$("n3").className=act&&act.data.total?"on":"";
+  $("sT").textContent=ok?(filled.length===4?"Todos os boletins preenchidos":filled.length+" de 4 boletins preenchidos"):"Nenhum arquivo carregado";
+  $("sT").className=ok?"on":"";
+  $("sS").textContent=ok?(missing.length?"Faltam: "+missing.join(", "):"Pronto para gerar a imagem"):"Carregue os arquivos no passo 1";
+  $("pill").textContent=ready&&filled.length===4?"Pronto":"Em preenchimento";
+  $("pill").className="pill"+(ready&&filled.length===4?" ok":"");
+  $("c1").className="ci"+(ok?" ok":"");$("c1s").textContent=ok?ok+" arquivo(s) lido(s) com sucesso":"Carregue os arquivos no passo 1";
+  $("c2").className="ci"+(filled.length===4?" ok":"");$("c2s").textContent=filled.length?(missing.length?"Sem arquivo: "+missing.join(", "):"Os 4 boletins têm dados"):"Nenhum boletim preenchido";
+  $("c3").className="ci"+(hasDate?" ok":"");$("c3s").textContent=hasDate?$("dt").value.split("-").reverse().join("/"):"Informe a data no passo 1";
+  $("gen").disabled=!ready;
+  $("s2").classList.toggle("locked",!ok);$("s3").classList.toggle("locked",!ok);
+}
+function refresh(){renderFiles();renderData();renderSide();if(GEN&&FILES.some(f=>f.data))gerar(false);}
+
+/* ================= imagem (estilo do boletim) ================= */
+const MES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+function dateLabel(){const v=$("dt").value;return v?v.split("-")[2]+"/"+MES[+v.split("-")[1]-1]:"—"}
+function pickData(data){
+  const isEx=j=>norm(j.title).includes("experiencia"),isCa=j=>norm(j.title).includes("cancelamento");
+  const rest=data.journeys.filter(j=>!isEx(j)&&!isCa(j)).flatMap(j=>j.items).filter(i=>i.pct>0).sort((a,b)=>b.pct-a.pct).slice(0,5);
+  const top2=f=>{const j=data.journeys.find(f);return j?{title:j.title,items:j.items.filter(i=>i.pct>0).slice(0,2)}:null};
+  return{rest,ex:top2(isEx),ca:top2(isCa)};
+}
+function layoutSpec(){
+  const L=[{t:"blank"}];
+  for(let n=0;n<5;n++)L.push({t:"item",s:"rest",n});
+  [["ex","Experiência do Cliente"],["ca","Cancelamento"]].forEach(([s,def])=>{
+    L.push({t:"blank"},{t:"blank"},{t:"sec",s,def},{t:"blank"},{t:"item",s,n:0},{t:"item",s,n:1});
+  });
+  return L;
+}
+function gerar(scroll){
+  const cols=BOL.map(b=>{const f=fileFor(b.k);return{b,d:f?pickData(f.data):null,total:f?f.data.total:null}});
+  if(!cols.some(c=>c.d))return;
+  const dd=dateLabel(),L=layoutSpec();
+  const colW=330,gap=36,pad=18,rowH=21,headH=48,boxW=64,RED="#A90000";
+  const W=pad*2+colW*4+gap*3,H=pad+headH+L.length*rowH+pad,K=2;
+  const c=document.createElement("canvas");c.width=W*K;c.height=H*K;
+  const x=c.getContext("2d");x.scale(K,K);
+  x.fillStyle="#fff";x.fillRect(0,0,W,H);
+  const FF='"Aptos Narrow","Segoe UI",Calibri,Arial,sans-serif';
+  cols.forEach(({b,d,total},ci)=>{
+    const x0=pad+ci*(colW+gap);
+    x.fillStyle=RED;x.fillRect(x0+colW-boxW,pad,boxW,headH);
+    x.fillStyle="#fff";x.textAlign="center";x.textBaseline="middle";x.font="15px "+FF;
+    x.fillText(dd,x0+colW-boxW/2,pad+headH/2-10);
+    if(total)x.fillText(String(Math.round(total)),x0+colW-boxW/2,pad+headH/2+10);
+    x.textAlign="left";x.textBaseline="alphabetic";x.fillStyle=RED;x.font="bold 15px "+FF;
+    x.fillText(b.t,x0,pad+headH-8);
+    L.forEach((l,k)=>{
+      const y=pad+headH+k*rowH;
+      x.strokeStyle="#e3e3e3";x.lineWidth=1;x.beginPath();x.moveTo(x0,y+rowH-.5);x.lineTo(x0+colW,y+rowH-.5);x.stroke();
+      if(l.t==="item"){
+        if(!d){if(k===1){x.fillStyle="#9ca3af";x.font="italic 14px "+FF;x.textAlign="left";x.fillText("sem arquivo",x0,y+rowH-6)}return}
+        const it=l.s==="rest"?d.rest[l.n]:(d[l.s]&&d[l.s].items[l.n]);
+        if(!it)return;
+        x.fillStyle="#111";x.font="15px "+FF;x.textAlign="left";x.fillText(it.label,x0,y+rowH-6,colW-58);
+        x.textAlign="right";x.fillText(fmt(it.pct),x0+colW-10,y+rowH-6);
+      }else if(l.t==="sec"){
+        x.fillStyle=RED;x.font="15px "+FF;x.textAlign="left";x.fillText((d&&d[l.s]&&d[l.s].title)||l.def,x0,y+rowH-6);
+      }
+    });
+  });
+  const name="speech-analytics_"+dd.replace("/","-")+".png";
+  c.toBlob(bl=>{
+    LAST={blob:bl,name};GEN=true;
+    $("pv").innerHTML='<img alt="Imagem dos boletins gerada">';$("pv").firstChild.src=URL.createObjectURL(bl);
+    $("outMsg").textContent=name;
+    $("dl").disabled=$("cp").disabled=$("dl2").disabled=false;
+    if(scroll)$("s3").scrollIntoView({behavior:"smooth",block:"start"});
+  },"image/png");
+}
+function baixar(){if(!LAST)return;const a=document.createElement("a");a.href=URL.createObjectURL(LAST.blob);a.download=LAST.name;document.body.appendChild(a);a.click();a.remove()}
+async function copiar(){
+  if(!LAST)return;
+  try{await navigator.clipboard.write([new ClipboardItem({"image/png":LAST.blob})]);$("outMsg").textContent="Imagem copiada!"}
+  catch(e){$("outMsg").textContent="Não consegui copiar neste navegador. Use Baixar PNG."}
+}
+
+/* ================= eventos ================= */
+const d=$("drop");
+d.onclick=()=>$("file").click();
+d.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("file").click()}};
+$("file").onchange=e=>{addFiles(e.target.files);e.target.value=""};
+["dragover","dragenter"].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.remove("over")}));
+d.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
+["dragover","drop"].forEach(ev=>window.addEventListener(ev,e=>e.preventDefault()));
+$("files").addEventListener("change",e=>{
+  const row=e.target.closest(".f");if(!row||e.target.tagName!=="SELECT")return;
+  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;ACTIVE=null;refresh()}
+});
+$("files").addEventListener("click",e=>{
+  const row=e.target.closest(".f");if(!row||!e.target.classList.contains("x"))return;
+  FILES=FILES.filter(x=>x.id!=row.dataset.id);ACTIVE=null;
+  status(FILES.length?FILES.length+" arquivo(s) na lista":"Aguardando arquivos");refresh();
+});
+$("tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;ACTIVE=t.dataset.k;renderData();renderSide()});
+$("q").oninput=e=>{V.q=e.target.value;renderData()};
+$("zeros").onchange=e=>{V.zeros=e.target.checked;renderData()};
+$("all").onclick=()=>{V.all=!V.all;$("all").textContent=V.all?"Ver só os principais":"Ver todos os motivos";renderData()};
+$("dt").onchange=refresh;
+$("gen").onclick=()=>gerar(true);
+$("dl").onclick=$("dl2").onclick=baixar;
+$("cp").onclick=copiar;
+$("dt").value=new Date().toISOString().slice(0,10);
+refresh();
+</script>
+</body>
+</html>
