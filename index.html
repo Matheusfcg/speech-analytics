@@ -533,9 +533,11 @@ function CARD(k){
   const card=buildCard(cf,df);CACHE.set(k,{key,card});return card;
 }
 function buildCard(cf,df){
-  const cat=cf.r.cat,total=cat.total,dp=SEG==="movel"?REF.movel:REF.hfc,alt=SEG==="movel"?REF.hfc:REF.movel;
+  const cat=cf.r.cat,dp=SEG==="movel"?REF.movel:REF.hfc;
+  /* total do card = interações do arquivo de DDD (Dados de Interação); sem ele, as interações do arquivo de categorias */
+  const D0=df&&df.r.ddd,total=D0?(D0.meta.inter||D0.n):cat.total,totalSrc=D0?"ddd":(cat.total?"categorias":null);
   const ps=cat.rows.map(r=>r.p).filter(x=>x!=null),frac=ps.length>0&&Math.max(...ps)<=1.0001;
-  const by={},unm=[];let mapped=0,fromAlt=0;
+  const by={},unm=[];let mapped=0;
   for(const row of cat.rows){
     const k=norm(row.n);let m=dp.get(k);
     if(!m&&row.l&&row.j)m={l:row.l,j:row.j};                       /* nomenclatura que já vem no próprio arquivo */
@@ -567,7 +569,7 @@ function buildCard(cf,df){
     const rank={};for(let i=0;i<D.n;i++){const c=D.codes[i];if(c)rank[D.dl[c-1]]=(rank[D.dl[c-1]]||0)+1}
     dd={file:df.name,sheet:D.sheet,n:D.n,inter:D.meta.inter||D.n,idn:D.idn,rank,ok,miss};
   }
-  return{total,totalSrc:cat.totalSrc,catFile:cf.name,catSheet:cat.sheet,journeys,mapped,unm:unm.sort((a,b)=>(b.v||0)-(a.v||0)),fromAlt,nRows:cat.rows.length,dd,date:cat.meta.ini||null};
+  return{total,totalSrc,catTotal:cat.total,dddFile:df?df.name:null,catFile:cf.name,catSheet:cat.sheet,journeys,mapped,unm:unm.sort((a,b)=>(b.v||0)-(a.v||0)),nRows:cat.rows.length,dd,date:cat.meta.ini||null};
 }
 function status(t,err){const s=$("status");s.textContent=t;s.className=err?"err":""}
 async function addFiles(list){
@@ -639,11 +641,12 @@ function renderData(){
   if(d.dd){const r=d.dd.rank,k0=Object.keys(r).sort((a,b)=>r[b]-r[a])[0];
     kd=`<div><span>DDD identificado</span><b>${fint(d.dd.idn)}</b><small>de ${fint(d.dd.n)} interações${k0?` · principal ${k0} - ${REF.uf[k0]||""} (${fmtI(r[k0]/d.dd.idn*100)})`:""}</small></div>`}
   $("kp").innerHTML=
-    `<div><span>Total de interações</span><b>${d.total?fint(d.total):"—"}</b><small>${esc(d.catFile)}${d.totalSrc==="celula"?" · célula do total":""}</small></div>`+
+    `<div><span>Total de interações</span><b>${d.total?fint(d.total):"—"}</b><small>${d.totalSrc==="ddd"?"arquivo de DDD · "+esc(d.dddFile):d.totalSrc?"arquivo de categorias (sem DDD)":"não encontrado"}${d.totalSrc==="ddd"&&d.catTotal?" · categorias: "+fint(d.catTotal):""}</small></div>`+
     `<div><span>Maior motivo</span><b>${fmt(top.pct)}</b><small>${esc(top.label)} · ${esc(top.j)}</small></div>`+
     `<div><span>Categorias com nomenclatura</span><b>${d.mapped}</b><small>de ${d.nRows} no arquivo · ${d.unm.length} com valor sem DePara</small></div>`+kd;
   const warn=[];
-  if(!d.total)warn.push("O arquivo de categorias não traz o total de “Interações”: os percentuais ficaram sem base.");
+  if(!d.total)warn.push("Não achei o total de “Interações” nem no arquivo de DDD nem no de categorias: os percentuais ficaram sem base.");
+  else if(d.totalSrc!=="ddd")warn.push(`Este boletim está sem arquivo de DDD: o % foi calculado sobre as interações do arquivo de categorias (${fint(d.total)}). Carregue o arquivo _DDD para usar o total certo.`);
   if(d.dd&&d.dd.miss)warn.push(`${d.dd.miss} motivo(s) não aparecem como coluna no arquivo de DDD.`);
   $("val").innerHTML=(warn.length?`<div class="wbox">${warn.map(esc).join("<br>")}</div>`:"")+
     (d.unm.length?`<details class="unm"><summary>${d.unm.length} categoria(s) com valor e sem nomenclatura no DePara ${SEG==="movel"?"Móvel":"HFC"} (ficam fora dos cards)</summary><div>${d.unm.slice(0,60).map(r=>`<span>${esc(r.n)} <b>${r.v!=null?fint(r.v):fmt(r.p)}</b></span>`).join("")}${d.unm.length>60?`<span>+ ${d.unm.length-60}</span>`:""}</div></details>`:"");
@@ -720,7 +723,7 @@ function gerar(scroll){
   const cardH=CHEAD+bodyH+14;
   const NC=cols.length,inner=CW*NC+GAP*(NC-1),W=Math.max(PAD*2+inner,820),OX=Math.round((W-inner)/2),K=2;
   const now=new Date();
-  const footL="% = valor da categoria ÷ interações do boletim  ·  medidor de 0 a 100%"+(anyD?"  ·  DDD: 3 principais por motivo":"");
+  const footL="% = valor da categoria ÷ interações do arquivo de DDD  ·  medidor de 0 a 100%"+(anyD?"  ·  DDD: 3 principais por motivo":"");
   const footR=segName+"  ·  gerado em "+now.toLocaleDateString("pt-BR")+" "+now.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
   const mcx=document.createElement("canvas").getContext("2d");mcx.font="11.5px "+FF;
   const footTwo=mcx.measureText(footL).width+mcx.measureText(footR).width+40>W-PAD*2;
