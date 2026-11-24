@@ -99,6 +99,18 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
 .opts .osep{width:1px;align-self:stretch;background:var(--bd)}
 #segR,#segM{accent-color:var(--seg,#001969)}
 .row2 em{font-style:normal;font-size:12px;color:var(--red)}
+.kt{display:inline-block;font-size:10.5px;font-weight:700;color:var(--red);background:var(--red-l);border-radius:5px;padding:1px 6px;margin-right:2px}
+.fi small b{color:var(--tx)}
+.warn{color:var(--red);font-weight:600}
+#refline{margin-top:10px;font-size:12px;color:var(--mut)}
+#refline b{color:var(--tx);font-weight:600}
+.lnk{border:0;background:none;color:var(--red);text-decoration:underline;padding:0;font-size:12px}
+.wbox{background:#fff7e6;border:1px solid #f3d9a4;color:#7a4b00;border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:12px;line-height:1.5}
+.unm{border:1px solid var(--bd);border-radius:10px;margin-bottom:14px;background:var(--soft)}
+.unm summary{cursor:pointer;padding:10px 12px;font-size:12.5px;color:var(--tx)}
+.unm div{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 12px}
+.unm span{font-size:11.5px;background:#fff;border:1px solid var(--bd);border-radius:6px;padding:3px 7px;color:#374151}
+.unm span b{color:var(--red);margin-left:4px}
 .more{font-size:12px;color:var(--mut);padding-top:8px;border-top:1px solid var(--bd)}
 .empty{padding:28px;text-align:center;color:var(--mut)}
 
@@ -163,12 +175,12 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
   <div class="col">
 
     <section class="step" id="s1">
-      <div class="sh"><span class="n">1</span><div><b>Arquivos dos boletins</b><small>Excel (.xlsx, .xls) ou CSV. Pode selecionar vários de uma vez.</small></div></div>
+      <div class="sh"><span class="n">1</span><div><b>Arquivos dos boletins</b><small>Para cada boletim: o relatório de categorias (Gráficos) e o de DDD (Dados de Interação). Pode soltar todos de uma vez.</small></div></div>
       <div class="sb">
         <div id="drop" tabindex="0" role="button" aria-label="Carregar arquivos">
           <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg></div>
           <strong>Carregar arquivos dos boletins</strong>
-          <span>Arraste aqui ou clique para selecionar · lê as abas Base, DePara e Base DDD automaticamente</span>
+          <span>Arraste aqui ou clique para selecionar · o boletim é reconhecido pelo nome do arquivo ou pelo título do relatório</span>
           <input type="file" id="file" multiple hidden>
         </div>
         <div id="status">Aguardando arquivos</div>
@@ -176,6 +188,7 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
         <div class="row2">
           <label>Data de referência <input type="date" id="dt"></label><em id="dtSrc"></em>
         </div>
+        <div id="refline"></div>
       </div>
     </section>
 
@@ -184,6 +197,7 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
       <div class="sb">
         <div class="tabs" id="tabs"></div>
         <div class="kp" id="kp"></div>
+        <div id="val"></div>
         <div class="tools">
           <label>Buscar motivo <input type="text" id="q" placeholder="ex.: sem sinal"></label>
           <label><input type="checkbox" id="zeros"> mostrar zerados</label>
@@ -195,7 +209,7 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
     </section>
 
     <section class="step locked" id="s3">
-      <div class="sh"><span class="n">3</span><div><b>Imagem do boletim</b><small>Um card por boletim: top 5 com medidor e DDDs, e o top 2 de Experiência do Cliente e Cancelamento.</small></div></div>
+      <div class="sh"><span class="n">3</span><div><b>Imagem do boletim</b><small>Um card por boletim carregado (boletim sem arquivo fica fora): top 5 com medidor e DDDs, e o top 2 de Experiência do Cliente e Cancelamento.</small></div></div>
       <div class="sb">
         <div class="opts"><label><input type="checkbox" id="segR" checked> Residencial</label><label><input type="checkbox" id="segM"> Móvel</label><span class="osep"></span><label><input type="checkbox" id="optDDD" checked> Mostrar DDD</label><label><input type="checkbox" id="optCa" checked> Incluir Cancelamento</label></div>
         <div id="pv"><div class="ph">Clique em “Gerar imagem” no resumo ao lado.</div></div>
@@ -232,399 +246,446 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
   </aside>
 </div>
 
+<script type="text/plain" id="parser-src">
+/* ===== Leitor das planilhas (roda num Web Worker; se não der, roda na própria página) ===== */
+function SPEECH_PARSER(XLSX){
+  const norm=s=>String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim().toLowerCase();
+  const txt=v=>String(v==null?"":v).replace(/\s+/g," ").trim();
+  const digits=v=>String(v==null?"":v).replace(/\D/g,"");
+  const empty=v=>v==null||v===""||(typeof v==="string"&&!v.trim());
+  const grid=ws=>ws["!data"]||ws;                        /* modo dense: linhas como arrays */
+  const V=(G,r,c)=>{const row=G[r],x=row&&row[c];return x?x.v:undefined};
+  const lastRow=ws=>{try{return XLSX.utils.decode_range(ws["!ref"]).e.r}catch(e){return(grid(ws).length||1)-1}};
+  const rowVals=(G,r,maxC)=>{const row=G[r]||[],n=Math.min(row.length,maxC||row.length),o=new Array(n);for(let c=0;c<n;c++)o[c]=row[c]?row[c].v:"";return o};
+  function toISO(v){
+    if(v instanceof Date&&!isNaN(v))return v.getFullYear()+"-"+String(v.getMonth()+1).padStart(2,"0")+"-"+String(v.getDate()).padStart(2,"0");
+    const m=String(v||"").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    return m?m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0"):null;
+  }
+  const firstAfter=row=>{for(let i=1;i<row.length;i++)if(!empty(row[i]))return row[i];return null};
+  /* cabeçalho do Verint: Interações, datas, projeto e título */
+  function readMeta(G,upto){
+    const m={};
+    for(let r=0;r<=upto;r++){
+      const row=rowVals(G,r,12);if(!row.length)continue;
+      const k=norm(row[0]);
+      if(m.inter==null&&/^interacoes\b/.test(k))
+        for(const c of row.slice(1)){const mm=String(c).match(/^\s*([\d.]+)/);if(mm){const n=+mm[1].replace(/\./g,"");if(n>0){m.inter=n;break}}}
+      if(!m.ini&&/^data de inicio/.test(k))m.ini=toISO(firstAfter(row));
+      if(!m.fim&&/^data de termino/.test(k))m.fim=toISO(firstAfter(row));
+      if(!m.proj&&/^nome do projeto/.test(k))m.proj=txt(firstAfter(row));
+      if(!m.custom&&/^custom data/.test(k))m.custom=txt(firstAfter(row));
+      if(!m.title)for(const c of row)if(typeof c==="string"&&/relatorio/.test(norm(c))){m.title=txt(c);break}
+    }
+    return m;
+  }
+  /* tabela de categorias: Nome + Valor (Gráficos do Verint) ou Nome/Valor/Percentual/Nomenclatura/Jornada (Base antiga) */
+  function findCatHeader(G,last){
+    for(let r=0;r<=Math.min(last,150);r++){
+      const row=rowVals(G,r,40),cols={};
+      row.forEach((c,i)=>{
+        if(typeof c!=="string")return;const s=norm(c);if(!s)return;
+        if((s==="nome"||/^nome da categoria|^categoria$/.test(s))&&cols.nome==null)cols.nome=i;
+        else if(/^(valor|qtd|quantidade|volume)\b/.test(s)&&cols.val==null)cols.val=i;
+        else if(/^percent|^%$/.test(s)&&cols.pct==null)cols.pct=i;
+        else if(/nomenclatura/.test(s)&&cols.mot==null)cols.mot=i;
+        else if(/^jornada\b/.test(s)&&cols.jor==null)cols.jor=i;
+      });
+      if(cols.nome!=null&&(cols.val!=null||cols.pct!=null))return{r,cols};
+    }
+    return null;
+  }
+  function readCat(G,last,sheet){
+    const h=findCatHeader(G,last);if(!h)return null;
+    const {cols}=h,rows=[];let blank=0;
+    for(let r=h.r+1;r<=last;r++){
+      const n=txt(V(G,r,cols.nome));
+      if(!n){if(rows.length&&++blank>=2)break;continue}
+      blank=0;
+      const v=cols.val!=null?V(G,r,cols.val):null,p=cols.pct!=null?V(G,r,cols.pct):null;
+      const num=x=>typeof x==="number"&&isFinite(x)?x:(typeof x==="string"&&/^\s*-?[\d.,]+\s*%?\s*$/.test(x)?parseFloat(x.includes(",")?x.replace(/\./g,"").replace(",","."):x):null);
+      const vv=num(v),pp=num(p);
+      if(vv==null&&pp==null)continue;
+      rows.push({n,v:vv,p:pp,l:cols.mot!=null?txt(V(G,r,cols.mot)):"",j:cols.jor!=null?txt(V(G,r,cols.jor)):""});
+    }
+    if(!rows.length)return null;
+    const meta=readMeta(G,h.r-1);
+    let total=meta.inter||null,totalSrc=total?"interacoes":null;
+    if(!total)for(let r=0;r<Math.min(3,h.r)&&!total;r++)for(const c of rowVals(G,r,10))if(typeof c==="number"&&c>=1&&Number.isInteger(c)){total=c;totalSrc="celula";break}
+    return{sheet,rows,total,totalSrc,meta};
+  }
+  /* dados de interação (DDD): cabeçalho com Nº / ANI / MSISDN e uma coluna por categoria */
+  function readDDD(G,last,sheet,valid){
+    let hr=-1,ci={};
+    for(let r=0;r<=Math.min(last,400);r++){
+      const row=G[r];if(!row)continue;const m={};
+      for(let c=0;c<row.length;c++){const x=row[c];if(!x||typeof x.v!=="string")continue;const s=norm(x.v);
+        if(s==="ani"&&m.ani==null)m.ani=c;else if(s==="msisdn"&&m.ms==null)m.ms=c;else if(s==="ddd cliente"&&m.dc==null)m.dc=c;}
+      if(m.ani!=null||m.ms!=null){hr=r;ci=m;break}
+    }
+    if(hr<0)return null;
+    const H=rowVals(G,hr),grp=hr>0?rowVals(G,hr-1):[];
+    let c0=-1,c1=-1;
+    grp.forEach((g,i)=>{const s=norm(g);if(/dados de categoria/.test(s))c0=i;else if(/dados de intera/.test(s)&&c0>=0&&c1<0)c1=i});
+    if(c0<0){c0=H.findIndex(h=>/palavras-chave/.test(norm(h)))+1||4}
+    if(c1<0)c1=Math.min(...[ci.ani,ci.ms].filter(x=>x!=null));
+    const catCols=[],names=[];
+    for(let c=c0;c<c1;c++){const k=norm(H[c]);if(k){catCols.push(c);names.push(k)}}
+    const VAL=new Set(valid),lists=catCols.map(()=>[]);
+    const codesArr=[],dl=[],dIdx={};
+    const dddOf=(ani,ms,dc)=>{
+      const a=digits(ani),m=digits(ms),c=digits(dc),ok=d=>d&&VAL.has(d)?d:null;let d=null;
+      if(a.startsWith("55")&&a.length>=12)d=ok(a.slice(2,4));
+      if(!d&&m.length>=10)d=ok(m.slice(0,2));
+      if(!d&&a.length>=10&&a.length<=11)d=ok(a.slice(0,2));
+      if(!d&&c.length===2)d=ok(c);
+      return d;
+    };
+    let n=0;
+    for(let r=hr+1;r<=last;r++){
+      const row=G[r];if(!row)continue;
+      const id=row[0]&&row[0].v,ani=row[ci.ani]&&row[ci.ani].v,ms=ci.ms!=null&&row[ci.ms]?row[ci.ms].v:"";
+      if(empty(id)&&empty(ani)&&empty(ms))continue;
+      const d=dddOf(ani,ms,ci.dc!=null&&row[ci.dc]?row[ci.dc].v:"");
+      let code=0;if(d){if(!dIdx[d]){dl.push(d);dIdx[d]=dl.length}code=dIdx[d]}
+      codesArr.push(code);
+      for(let i=0;i<catCols.length;i++){const x=row[catCols[i]];if(x&&!empty(x.v))lists[i].push(n)}
+      n++;
+    }
+    if(!n)return null;
+    const cols={};
+    names.forEach((k,i)=>{if(!lists[i].length)return;const prev=cols[k];
+      cols[k]=prev?Int32Array.from(new Set([...prev,...lists[i]])).sort():Int32Array.from(lists[i])});
+    const codes=Uint8Array.from(codesArr);
+    let idn=0;for(const x of codes)if(x)idn++;
+    return{sheet,n,idn,codes,dl,cols,meta:readMeta(G,hr-1)};
+  }
+  /* planilha de base: DePara HFC, Móvel e DDD */
+  function readRef(wb){
+    const out={h:null,m:null,d:null};
+    for(const nm of wb.SheetNames){
+      const s=norm(nm);if(!/de ?para/.test(s))continue;
+      const ws=wb.Sheets[nm];if(!ws)continue;const G=grid(ws),last=lastRow(ws),rows=[];
+      for(let r=1;r<=last;r++){const v=rowVals(G,r,4);if(!txt(v[0]))continue;rows.push(v.map(txt))}
+      if(/ddd/.test(s))out.d=rows.filter(r=>/^\d{2}$/.test(r[0])&&/^[A-Z]{2}$/.test(r[1]));
+      else if(/movel/.test(s))out.m=rows.filter(r=>r[1]&&r[2]).map(r=>r.slice(0,3));
+      else out.h=rows.filter(r=>r[1]&&r[2]).map(r=>r.slice(0,3));
+    }
+    return out.h||out.m||out.d?out:null;
+  }
+  function parse(buf,valid){
+    let names=null;
+    try{names=XLSX.read(buf,{type:"array",bookSheets:true}).SheetNames}catch(e){}
+    const keep=names&&names.length>1?names.filter(n=>!/^apoio/i.test(n)):null;   /* abas de apoio com 20 mil linhas de fórmula não são usadas */
+    const opt={type:"array",dense:true,cellDates:true,cellFormula:false,cellHTML:false,cellText:false,cellStyles:false};
+    const wb=XLSX.read(buf,keep&&keep.length?{...opt,sheets:keep}:opt);
+    let cat=null,ddd=null;const metas=[];
+    for(const nm of wb.SheetNames){
+      const ws=wb.Sheets[nm];if(!ws||!ws["!ref"]||/de ?para|apoio/.test(norm(nm)))continue;
+      const G=grid(ws),last=lastRow(ws);
+      const d=ddd?null:readDDD(G,last,nm,valid);
+      if(d){ddd=d;metas.push(d.meta);continue}
+      const c=readCat(G,last,nm);
+      if(c&&(!cat||c.rows.length>cat.rows.length))cat=c;
+      if(c)metas.push(c.meta);else metas.push(readMeta(G,Math.min(last,40)));
+    }
+    /* total da aba de categorias: se a própria aba não traz "Interações", procura nas outras abas do mesmo arquivo */
+    if(cat&&!cat.total){const o=metas.find(m=>m.inter);if(o){cat.total=o.inter;cat.totalSrc="outra aba"}}
+    const meta=Object.assign({},...metas.slice().reverse(),cat?cat.meta:{});
+    const ref=cat||ddd?null:readRef(wb);
+    return{sheets:wb.SheetNames,meta,cat,ddd,ref};
+  }
+  return{parse,norm};
+}
+</script>
+<script type="application/json" id="ref-padrao">{"h":[["VOO_Transferência Ligação","Op. Informa transferência da lig.","Experiência do Cliente"],["VOO_Sistema Lento","Sistema lento","Experiência do Cliente"],["VOO_Sem Sistema","Estamos sem sistema para atendê-lo","Experiência do Cliente"],["VOO_Prontidão em resolver","Prontidão de resolver por parte do operador","Experiência do Cliente"],["VOO_Por falta de comunicação","Por falta de comunicação","Experiência do Cliente"],["VOO_Pede para ligar de novo","Operador solicita que cliente ligue de novo","Experiência do Cliente"],["VOO_Orienta ligar em outro N","Orienta ligar em outro número","Experiência do Cliente"],["VOO_Orienta ir á loja","Operador orienta cliente ir á loja","Experiência do Cliente"],["VOO_Incentivo Indevido Ouvidoria","Incentivo Indevido Ouvidoria","Experiência do Cliente"],["VOO_Incentivo Indevido a Anatel","Incentivo Indevido a Anatel","Experiência do Cliente"],["VOO_Incentiva o autoatendimento","Operador incentiva o autoatendimento","Experiência do Cliente"],["VOO_Incentiva Canal Ouvidoria","Incentiva Canal Ouvidoria","Experiência do Cliente"],["VOO_Gerenciamento de Insatisfação","Acolhe o cliente/ utiliza linguagem positiva","Experiência do Cliente"],["VOO_FINAN_Religue/Reabilitação Não Disponível","Não é possivel realizar o Religue/Reabilitação","Financeiro"],["VOO_FINAN_Reajuste","Operador informa reajuste","Financeiro"],["VOO_FINAN_Reabilitação/Promessa de Pagamento","Operador realiza reabilitação do sinal","Financeiro"],["VOO_FINAN_Quebrou o Acordo","Quebra de acordo","Financeiro"],["VOO_FINAN_Possui Débitos","Operador informa inadimplência","Financeiro"],["VOO_FINAN_Parcelamento/Assessoria Cobrança","Parcelamento/Assessoria de Cobrança","Financeiro"],["VOO_FINAN_Envio de 2ª Via de Fatura","Operador envia 2ª via de fatura","Financeiro"],["VOO_FINAN_Desconto para Pagamento à Vista","Desconto para Pagamento à Vista","Financeiro"],["VOO_FINAN_DCC Não Ocorreu","DCC Não Ocorreu","Financeiro"],["VOO_FINAN_Contestação de Valores","Contestação de Valores","Financeiro"],["VOO_FINAN_Cobrança Pro Rata","Cobrança Pró Rata","Financeiro"],["VOO_FINAN_Baixa de pagamento/Busca de Pagamento","Baixa de Pagamento Fora do Prazo","Financeiro"],["VOO_Falta de Acolhimento","Falta de Acolhimento","Experiência do Cliente"],["VOO_Cham. Interrompida","Chamada interrompida","Experiência do Cliente"],["VOO_CANC_Visita técnica","Cancelamento por Visita técnica","Cancelamento"],["VOO_CANC_Troca de Titularidade","Troca de Titularidade","Cancelamento"],["VOO_CANC_Suspensão Temporária","Suspensão Temporária","Cancelamento"],["VOO_CANC_Sondagem","Operador faz sondagem","Cancelamento"],["VOO_CANC_Retenção Verbalizada","Retenção Verbalizada","Cancelamento"],["VOO_CANC_Reset","Reset","Cancelamento"],["VOO_CANC_Reforço de Sinal","Reforço de Sinal","Cancelamento"],["VOO_CANC_Orienta ir á loja","Op. Orienta cliente a ir a loja","Cancelamento"],["VOO_CANC_Multa","Informa multa","Cancelamento"],["VOO_CANC_Contestação de Valores","Contestação de valores","Cancelamento"],["VOO_CANC_Cancelamento Verbalizado","Operador informa que fez o cancelamento","Cancelamento"],["VOO_CANC_Argumentação sobre Ofertas","Argumentação sobre Ofertas","Cancelamento"],["VOO_CANC_Adequação de Plano","Adequação de Plano","Cancelamento"],["VOO_Abertura de ocorrência","Operador informa que encaminhará solicitação a outra área","Experiência do Cliente"],["VOO_Abandono","Operador abandonou a chamada","Experiência do Cliente"],["VOC_Verbaliza Insatisfação com Representante Anterior","Verbaliza Insatisfação com Representante Anterior","Experiência do Cliente"],["VOC_Verbaliza Insatisfação com Representante","Cliente menciona insatifação com operador","Experiência do Cliente"],["VOC_Recorrente","Cliente reclama que todo mês precisa ligar","Experiência do Cliente"],["VOC_Reclama da demora para ser atendido","Reclama da demora para ser atendido","Experiência do Cliente"],["VOC_Rechamada","Cliente menciona que já ligou outras vezes","Experiência do Cliente"],["VOC_Pede para chamar o supervisor","Pede para chamar o supervisor","Experiência do Cliente"],["VOC_Não concorda com prazo","Não concorda com prazo","Experiência do Cliente"],["VOC_Menciona ODC","Cliente menciona que vai procurar ODC","Experiência do Cliente"],["VOC_Má Qualidade Serviço","Cliente reclama má qualidade dos serviços","Experiência do Cliente"],["VOC_Gravação de Atendimento","Solicitação de gravação de atendimento","Experiência do Cliente"],["VOC_FINAN_MOTIVO_Vai pagar - Reabilitar","Vai pagar - Quer reabilitar","Financeiro"],["VOC_FINAN_MOTIVO_Solicitação de 2ª Via de Fatura","Envio 2ª via da Fatura","Financeiro"],["VOC_FINAN_MOTIVO_Reembolso/Abatimento","Reembolso/Abatimento de valores","Financeiro"],["VOC_FINAN_MOTIVO_Quero Pagar com Cartão de Crédito","Quero Pagar com Cartão de Crédito","Financeiro"],["VOC_FINAN_MOTIVO_Quer receber a fatura por SMS","Quer receber a fatura por SMS","Financeiro"],["VOC_FINAN_MOTIVO_Quer Receber a fatura por e-mail","Quer receber a fatura por E-mail","Financeiro"],["VOC_FINAN_MOTIVO_Pagou a Fatura Errada","Pagou fatura errada","Financeiro"],["VOC_FINAN_MOTIVO_Pagamento via Pix","Pagamento via Pix","Financeiro"],["VOC_FINAN_MOTIVO_Pagamento em Duplicidade","Pagamento em duplicidade","Financeiro"],["VOC_FINAN_MOTIVO_Pacotes/Serviços não Contratados","Pacotes/Serviços não Contratados","Financeiro"],["VOC_FINAN_MOTIVO_Negociação de Pagamento","Negociação de Pagamento","Financeiro"],["VOC_FINAN_MOTIVO_Não Recebeu a Fatura","Não recebeu a Fatura","Financeiro"],["VOC_FINAN_MOTIVO_Não quer fatura por E-mail","Não quer fatura por E-mail","Financeiro"],["VOC_FINAN_MOTIVO_Não Concorda Com Multa Fidelidade","Não Concorda Com Multa Fidelidade","Financeiro"],["VOC_FINAN_MOTIVO_Já pagou - Reabilitar","Já pagou - Quer reabilitar","Financeiro"],["VOC_FINAN_MOTIVO_Fatura em aberto","Fatura em aberto","Financeiro"],["VOC_FINAN_MOTIVO_Dificuldade de Acesso fatura digital","Estou com dificuldade de acesso a Fatura Digital","Financeiro"],["VOC_FINAN_MOTIVO_Diferente do Contratado","Diferente do Contratado","Financeiro"],["VOC_FINAN_MOTIVO_Desconto Não Aplicado/Acabou","Desconto Não Aplicado/Acabou","Financeiro"],["VOC_FINAN_MOTIVO_Código de Barras Inválido","Código de Barras Inválido","Financeiro"],["VOC_FINAN_MOTIVO_Cobrança de Visita Técnica","Cobrança de Visita Técnica","Financeiro"],["VOC_FINAN_MOTIVO_Cobrança de Serviço Adicional","Cobrança de Serviço Adicional","Financeiro"],["VOC_FINAN_MOTIVO_Cobrança Após Cancelamento","Cobrança após cancelamento","Financeiro"],["VOC_FINAN_MOTIVO_Alterações de Dados de Cobrança","Alterações de Dados de Cobrança","Financeiro"],["VOC_FINAN_MOTIVO_Ações de Cobrança","Ações de cobrança","Financeiro"],["VOC_FINAN_MOTIVO_Acha caro/aumento de valor","Acha caro/aumento de valor","Financeiro"],["VOC_Falta Resolução","Cliente reclamando que ninguém resolve","Experiência do Cliente"],["VOC_Divergência de informações","Divergência de informações","Experiência do Cliente"],["VOC_Cliente menciona que já foi à loja","Cliente menciona que já foi á loja","Experiência do Cliente"],["VOC_Chamada ruim/Barulho na operação","Cliente reclama de ruídos/barulhos no contato com a central","Experiência do Cliente"],["VOC_CANC_MOTIVO_Reforma","Reforma","Cancelamento"],["VOC_CANC_MOTIVO_Reajuste","Reajuste","Cancelamento"],["VOC_CANC_MOTIVO_Problema Telefone","Problema de telefone","Cancelamento"],["VOC_CANC_MOTIVO_Problema de TV","Problema de TV","Cancelamento"],["VOC_CANC_MOTIVO_Problema de internet","Problema de internet","Cancelamento"],["VOC_CANC_MOTIVO_Problema com agendamento","Problema com agendamento","Cancelamento"],["VOC_CANC_MOTIVO_Pouca Utilização","Sem/pouca utilização","Cancelamento"],["VOC_CANC_MOTIVO_Não pedi/Não Solicitei","Não pedi/Não Solicitei","Cancelamento"],["VOC_CANC_MOTIVO_Não Concorda com Valores","Reclama dos valores cobrados","Cancelamento"],["VOC_CANC_MOTIVO_Mudança de Endereço","Cancelamento por Mudança de Endereço","Cancelamento"],["VOC_CANC_MOTIVO_Fraude","Fraude","Cancelamento"],["VOC_CANC_MOTIVO_Falecimento ou Falência","Falecimento ou Falência","Cancelamento"],["VOC_CANC_MOTIVO_Dificuldade Financeira","Menciona dificuldade financeira/reclama do valor","Cancelamento"],["VOC_CANC_MOTIVO_Diferente do Contratado","Diferente do Contratado","Cancelamento"],["VOC_CANC_MOTIVO_Desconto Não Aplicado/Acabou","Desconto Não Aplicado/Acabou","Cancelamento"],["VOC_CANC_MOTIVO_Desastre Natural","Desastre Natural","Cancelamento"],["VOC_CANC_MOTIVO_Concorrência já instalada","Concorrência já instalada","Cancelamento"],["VOC_CANC_MOTIVO_Concorrência","Foi ou ameça a ir para concorrência","Cancelamento"],["VOC_CANC_MOTIVO_Arrependimento no Prazo","Arrependimento no prazo","Cancelamento"],["VOC_CANC_MOTIVO_Área não cabeada","Área não cabeada","Cancelamento"],["VOC_CANC_MOTIVO_Acha Caro/Aumento no Valor","Acha Caro/Aumento no Valor","Cancelamento"],["VOC_CANC_DOR_Retirada de equipamento","Cancelei - Não retiraram equipamento","Cancelamento"],["VOC_CANC_DOR_Confirmação de Cancelamento","Confirmação de Cancelamento","Cancelamento"],["VOC_CANC_DOR_Cancelar","Solicita ou ameaça Cancelamento","Cancelamento"],["VOC_CANC_DOR_Cancelamento não efetuado","Reclamação de cancelamento não efetuado","Cancelamento"],["VOC_CANC_DOR_Cancelamento Indevido","Cancelamento Indevido","Cancelamento"],["VOC_CANC_DOR_Cancelamento à La carte/Now/Streaming","Quero cancelar à la carte/Now/Streaming","Cancelamento"],["VOC_CANC_DOR_Adequação/Promoção e Desconto","Quer desconto/promoção","Cancelamento"],["VOC_Bolha de esforço","Cliente menciona esforço para resolver","Experiência do Cliente"],["VOC_ Reclamação Atendimento do APP/SITE","Cliente reclama do App/Site","Experiência do Cliente"],["P/S - Sobre Transferência de Titularidade","Transferência de titularidade","Produtos e serviços"],["P/S - Sobre Suspensão - Bloqueio/Desbloqueio","Sobre Suspensão/Bloqueio/Desbloqueio","Produtos e serviços"],["P/S - Sobre Streaming/APP","Streaming/APP","Produtos e serviços"],["P/S - Sobre seguro proteção móvel","Sobre seguro proteção móvel","Produtos e serviços"],["P/S - Sobre Roaming","Roaming Internacional","Produtos e serviços"],["P/S - Sobre Promoções","Sobre Promoções","Produtos e serviços"],["P/S - Sobre Portabilidade","Portabilidade","Produtos e serviços"],["P/S - Sobre Netflix","Sobre Netflix","Produtos e serviços"],["P/S - Sobre Mudança de Endereço","Mudança de Endereço","Produtos e serviços"],["P/S - Sobre Linha Dependente","Linha Dependente","Produtos e serviços"],["P/S - Sobre Claro TV +","Claro TV +","Produtos e serviços"],["P/S - Sobre Claro Clube","Sobre Claro Clube","Produtos e serviços"],["P/S - Sobre Claro BOX","Sobre Claro Box","Produtos e serviços"],["P/S - Sobre Chip","Sobre Chip","Produtos e serviços"],["P/S - Sobre Alteração Cadastral","Sobre Alteração Cadastral","Produtos e serviços"],["P/S - Sobre Agregador/Serviço Claro","Sobre Agregador/Serviço Claro","Produtos e serviços"],["P/S - Sobre a La carte","Sobre A La Carte","Produtos e serviços"],["P/S - Sobre - Troca de Número","Troca de Número","Produtos e serviços"],["P/S - Sobre - Contratação/Alteração","Quero contratar/alterar o plano","Produtos e serviços"],["P/S - O Quê - Troca de Chip","Troca de Chip","Produtos e serviços"],["P/S - O Quê - Sobre Franquia","Sobre pct. de dados/franquia","Produtos e serviços"],["P/S - O Quê - Não recebi o chip","Não recebeu o chip","Produtos e serviços"],["P/S - O quê - Não pedi linha móvel","Não pedi/desconhece Linha Móvel","Produtos e serviços"],["P/S - O Quê - Internet acaba rápido","Internet acaba rápido","Produtos e serviços"],["P/S - O Quê - Contratação/Alteração - TV","Contratação/Alteração - TV","Produtos e serviços"],["P/S - O Quê - Contratação/Alteração - Fixo/Móvel","Contratação/Alteração - Fixo/Móvel","Produtos e serviços"],["P/S - O Quê - Chamadas Publicitárias/Telemarketing","Reclamação de chamadas - Telemarketing","Produtos e serviços"],["P/S - O Quê - Bloqueio/Retomada de Perda/Roubo","Bloqueio/Retomada de Perda/Roubo","Produtos e serviços"],["P/S - O Quê - Ativação de Chip","Ativação de Chip","Produtos e serviços"],["P/S - O Quê - Aplicativos Ilimitados","Aplicativos Ilimitados","Produtos e serviços"],["P/S - Dor - Não pedi/não solicitei","Não pedi/solicitei","Produtos e serviços"],["P/S - Ação - Port. Cancel/conflito/rejeitada","Port. Cancel/conflito/rejeitada","Produtos e serviços"],["Fraude - O quê - Não Cliente e não Reconhece Cobrança","Não Cliente e não Reconhece Cobrança","Fraude"],["Fraude - O quê - Fatura Falsa","Fatura Falsa","Fraude"],["Fraude - O Quê - Abordagem fraudulenta da concorrência","Abordagem fraudulenta da concorrência","Fraude"],["Fraude - Dor - Situações de Fraude/Golpe","Fraude","Fraude"],["VOO_Script TNPS","Pesquisa_TNPS","Experiência do Cliente"],["VOO_TÉC_Excedeu a quantidade de envio sms","Excedeu a quantidade de envio sms","Técnico"],["VOC_TÉC_MOTIVO_Sem sinal de internet","Sem sinal de internet","Técnico"],["VOC_TÉC_MOTIVO_Sem sinal de telefone","Sem sinal de telefone","Técnico"],["VOC_TÉC_MOTIVO_Internet intermitente","Internet intermitente","Técnico"],["VOC_TÉC_MOTIVO_Internet lenta","Internet lenta","Técnico"],["VOC_TÉC_MOTIVO_Não faz/ não recebe chamadas","Problema - Não faz/não recebe chamadas","Técnico"],["VOC_TÉC_MOTIVO_Telefone Mudo","Problema - Telefone Mudo","Técnico"],["VOC_TÉC_MOTIVO_Controle Remoto","Problema controle remoto","Técnico"],["VOO_TÉC_Manutenção na região","Manutenção na região","Técnico"],["VOC_TÉC_MOTIVO_Problema ativação Streaming","Problema ativação Streaming","Técnico"],["VOC_TÉC_MOTIVO_Sem sinal de TV/ Box","Sem sinal de TV/ Box","Técnico"],["VOO_TÉC_Cliente ausente","Cliente ausente","Técnico"],["VOO_TÉC_Não consta agendamento","Não consta agendamento","Técnico"],["VOC_TÉC_MOTIVO_Cancelamento de agenda","Cancelamento de agenda","Técnico"],["VOC_TÉC_MOTIVO_Confirmação de agenda","Confirmação de agenda","Técnico"],["VOC_TÉC_MOTIVO_Equipamento não liga/queimado","Problema - Equipamento não liga/queimado","Técnico"],["VOC_TÉC_MOTIVO_Mudança de local de ponto","Mudança de local de ponto","Técnico"],["VOC_TÉC_MOTIVO_Qualidade de imagem","Problema TV - Qualidade da imagem","Técnico"],["VOC_TÉC_MOTIVO_Reagendamento","Reagendamento Técnico","Técnico"],["VOC_TÉC_MOTIVO_Sem sinal em alguns Canais","Problema TV - Sem sinal em alguns canais","Técnico"],["VOC_TÉC_MOTIVO_Técnico não compareceu","Técnico não compareceu","Técnico"],["VOO_TÉC_Reforço de Sinal","Reforço de sinal","Técnico"],["VOO_TÉC_Reset","Orientou reset equipamento","Técnico"],["VOO_TÉC_Visita técnica","Agendamento de Visita","Técnico"],["VOO_TÉC_Pacote adicional/recarga","Pacote adicional/recarga","Técnico"],["VOC_TÉC_MOTIVO_Problema no wifi","Problema com Wifi","Técnico"],["VOO_TÉC_Encaminhamento BKO Técnico","Encaminhamento BKO Técnico","Técnico"]],"m":[["VOO_Transferência Ligação","Op. Informa transferência da lig.","Experiência do Cliente"],["VOO_Sistema Lento","Sistema lento","Experiência do Cliente"],["VOO_Sem Sistema","Estamos sem sistema para atendê-lo","Experiência do Cliente"],["VOO_Prontidão em resolver","Prontidão de resolver por parte do operador","Experiência do Cliente"],["VOO_Por falta de comunicação","Por falta de comunicação","Experiência do Cliente"],["VOO_Pede para ligar de novo","Operador solicita que cliente ligue de novo","Experiência do Cliente"],["VOO_Orienta ligar em outro N","Orienta ligar em outro número","Experiência do Cliente"],["VOO_Orienta ir á loja","Operador orienta cliente ir á loja","Experiência do Cliente"],["VOO_Incentivo Indevido Ouvidoria","Incentivo Indevido Ouvidoria","Experiência do Cliente"],["VOO_Incentivo Indevido a Anatel","Incentivo Indevido a Anatel","Experiência do Cliente"],["VOO_Incentiva o autoatendimento","Operador incentiva o autoatendimento","Experiência do Cliente"],["VOO_Incentiva Canal Ouvidoria","Incentiva Canal Ouvidoria","Experiência do Cliente"],["VOO_Gerenciamento de Insatisfação","Acolhe o cliente/ utiliza linguagem positiva","Experiência do Cliente"],["VOO_FINAN_Religue/Reabilitação Não Disponível","Não é possivel realizar o Religue/Reabilitação","Financeiro"],["VOO_FINAN_Reajuste","Operador informa reajuste","Financeiro"],["VOO_FINAN_Reabilitação/Promessa de Pagamento","Operador realiza reabilitação do sinal","Financeiro"],["VOO_FINAN_Quebrou o Acordo","Quebra de acordo","Financeiro"],["VOO_FINAN_Possui Débitos","Operador informa inadimplência","Financeiro"],["VOO_FINAN_Parcelamento/Assessoria Cobrança","Parcelamento/Assessoria de Cobrança","Financeiro"],["VOO_FINAN_Extrato / Saldo Indisponível","Extrato / Saldo Indisponível","Financeiro"],["VOO_FINAN_Envio de 2ª Via de Fatura","Operador envia 2ª via de fatura","Financeiro"],["VOO_FINAN_Enviar Comprovante de Recarga","Enviar Comprovante de Recarga","Financeiro"],["VOO_FINAN_Descontou Crédito Emprestado","Descontou Crédito Emprestado","Financeiro"],["VOO_FINAN_Desconto para Pagamento à Vista","Desconto para Pagamento à Vista","Financeiro"],["VOO_FINAN_DCC Não Ocorreu","DCC Não Ocorreu","Financeiro"],["VOO_FINAN_Contestação de Valores","Contestação de Valores","Financeiro"],["VOO_FINAN_Cobrança Pro Rata","Cobrança Pró Rata","Financeiro"],["VOO_FINAN_Baixa de pagamento/Busca de Pagamento","Baixa de Pagamento Fora do Prazo","Financeiro"],["VOO_Falta de Acolhimento","Falta de Acolhimento","Experiência do Cliente"],["VOO_Cham. Interrompida","Chamada interrompida","Experiência do Cliente"],["VOO_CANC_Sondagem","Operador faz sondagem","Cancelamento"],["VOO_CANC_Retenção Verbalizada","Retenção Verbalizada","Cancelamento"],["VOO_CANC_Pacote adicional/recarga","Pacote adicional/recarga","Cancelamento"],["VOO_CANC_Orienta ir á loja","Op. Orienta cliente a ir a loja","Cancelamento"],["VOO_CANC_Multa","Informa multa","Cancelamento"],["VOO_CANC_Franquia ainda disponível","Franquia ainda disponível","Cancelamento"],["VOO_CANC_Envio do guia de aparelho sms","Envio do guia de aparelho sms","Cancelamento"],["VOO_CANC_Contestação de Valores","Contestação de valores","Cancelamento"],["VOO_CANC_Cancelamento Verbalizado","Operador informa que fez o cancelamento","Cancelamento"],["VOO_CANC_Atualização/configuração de aparelho","Atualização/configuração de aparelho","Cancelamento"],["VOO_CANC_Argumentação sobre Ofertas","Argumentação sobre Ofertas","Cancelamento"],["VOO_Abertura de ocorrência","Operador informa que encaminhará solicitação a outra área","Experiência do Cliente"],["VOO_Abandono","Operador abandonou a chamada","Experiência do Cliente"],["VOC_Verbaliza Insatisfação com Representante Anterior","Verbaliza Insatisfação com Representante Anterior","Experiência do Cliente"],["VOC_Verbaliza Insatisfação com Representante","Cliente menciona insatifação com operador","Experiência do Cliente"],["VOC_Recorrente","Cliente reclama que todo mês precisa ligar","Experiência do Cliente"],["VOC_Reclama da demora para ser atendido","Reclama da demora para ser atendido","Experiência do Cliente"],["VOC_Rechamada","Cliente menciona que já ligou outras vezes","Experiência do Cliente"],["VOC_Pede para chamar o supervisor","Pede para chamar o supervisor","Experiência do Cliente"],["VOC_Não concorda com prazo","Não concorda com prazo","Experiência do Cliente"],["VOC_Menciona ODC","Cliente menciona que vai procurar ODC","Experiência do Cliente"],["VOC_Má Qualidade Serviço","Cliente reclama má qualidade dos serviços","Experiência do Cliente"],["VOC_Gravação de Atendimento","Solicitação de gravação de atendimento","Experiência do Cliente"],["VOC_FINAN_MOTIVO_Vai pagar - Reabilitar","Vai pagar - Quer reabilitar","Financeiro"],["VOC_FINAN_MOTIVO_Solicitação de 2ª Via de Fatura","Envio 2ª via da Fatura","Financeiro"],["VOC_FINAN_MOTIVO_Reembolso/Abatimento","Reembolso/Abatimento de valores","Financeiro"],["VOC_FINAN_MOTIVO_Quero Pagar com Cartão de Crédito","Quero Pagar com Cartão de Crédito","Financeiro"],["VOC_FINAN_MOTIVO_Quer receber a fatura por SMS","Quer receber a fatura por SMS","Financeiro"],["VOC_FINAN_MOTIVO_Quer Receber a fatura por e-mail","Quer receber a fatura por E-mail","Financeiro"],["VOC_FINAN_MOTIVO_Pagou a Fatura Errada","Pagou fatura errada","Financeiro"],["VOC_FINAN_MOTIVO_Pagamento via Pix","Pagamento via Pix","Financeiro"],["VOC_FINAN_MOTIVO_Pagamento em Duplicidade","Pagamento em duplicidade","Financeiro"],["VOC_FINAN_MOTIVO_Pacotes/Serviços não Contratados","Pacotes/Serviços não Contratados","Financeiro"],["VOC_FINAN_MOTIVO_Negociação de Pagamento","Negociação de Pagamento","Financeiro"],["VOC_FINAN_MOTIVO_Não Recebeu a Fatura","Não recebeu a Fatura","Financeiro"],["VOC_FINAN_MOTIVO_Não quer fatura por E-mail","Não quer fatura por E-mail","Financeiro"],["VOC_FINAN_MOTIVO_Não Concorda Com Multa Fidelidade","Não Concorda Com Multa Fidelidade","Financeiro"],["VOC_FINAN_MOTIVO_Já pagou - Reabilitar","Já pagou - Quer reabilitar","Financeiro"],["VOC_FINAN_MOTIVO_Fatura em aberto","Fatura em aberto","Financeiro"],["VOC_FINAN_MOTIVO_Dificuldade de Acesso fatura digital","Estou com dificuldade de acesso a Fatura Digital","Financeiro"],["VOC_FINAN_MOTIVO_Diferente do Contratado","Diferente do Contratado","Financeiro"],["VOC_FINAN_MOTIVO_Desconto Não Aplicado/Acabou","Desconto Não Aplicado/Acabou","Financeiro"],["VOC_FINAN_MOTIVO_Desconhece/Discorda Desconto Recarga","Desconhece/Discorda Desconto Recarga","Financeiro"],["VOC_FINAN_MOTIVO_Código de Barras Inválido","Código de Barras Inválido","Financeiro"],["VOC_FINAN_MOTIVO_Cobrança Após Cancelamento","Cobrança após cancelamento","Financeiro"],["VOC_FINAN_MOTIVO_Alterações de Dados de Cobrança","Alterações de Dados de Cobrança","Financeiro"],["VOC_FINAN_MOTIVO_Ações de Cobrança","Ações de cobrança","Financeiro"],["VOC_FINAN_MOTIVO_Acha caro/aumento de valor","Acha caro/aumento de valor","Financeiro"],["VOC_Falta Resolução","Cliente reclamando que ninguém resolve","Experiência do Cliente"],["VOC_Divergência de informações","Divergência de informações","Experiência do Cliente"],["VOC_Cliente menciona que já foi à loja","Cliente menciona que já foi á loja","Experiência do Cliente"],["VOC_Chamada ruim/Barulho na operação","Cliente reclama de ruídos/barulhos no contato com a central","Experiência do Cliente"],["VOC_CANC_MOTIVO_Reajuste","Reajuste","Cancelamento"],["VOC_CANC_MOTIVO_Problema de voz","Cancelamento por Problema de voz","Cancelamento"],["VOC_CANC_MOTIVO_Problema de internet","Problema de internet","Cancelamento"],["VOC_CANC_MOTIVO_Pouca Utilização","Sem/pouca utilização","Cancelamento"],["VOC_CANC_MOTIVO_Não pedi/Não Solicitei","Não pedi/Não Solicitei","Cancelamento"],["VOC_CANC_MOTIVO_Não Concorda com Valores","Reclama dos valores cobrados","Cancelamento"],["VOC_CANC_MOTIVO_Fraude","Fraude","Cancelamento"],["VOC_CANC_MOTIVO_Falecimento ou Falência","Falecimento ou Falência","Cancelamento"],["VOC_CANC_MOTIVO_Dificuldade Financeira","Menciona dificuldade financeira/reclama do valor","Cancelamento"],["VOC_CANC_MOTIVO_Diferente do Contratado","Diferente do Contratado","Cancelamento"],["VOC_CANC_MOTIVO_Desconto Não Aplicado/Acabou","Desconto Não Aplicado/Acabou","Cancelamento"],["VOC_CANC_MOTIVO_Concorrência","Foi ou ameça a ir para concorrência","Cancelamento"],["VOC_CANC_MOTIVO_Arrependimento no Prazo","Arrependimento no prazo","Cancelamento"],["VOC_CANC_MOTIVO_Acha Caro/Aumento no Valor","Acha Caro/Aumento no Valor","Cancelamento"],["VOC_CANC_DOR_Downgrade/ migração de Plano","Downgrade/migração de Plano","Cancelamento"],["VOC_CANC_DOR_Confirmação de Cancelamento","Confirmação de Cancelamento","Cancelamento"],["VOC_CANC_DOR_Cancelar","Solicita ou ameaça Cancelamento","Cancelamento"],["VOC_CANC_DOR_Cancelamento não efetuado","Reclamação de cancelamento não efetuado","Cancelamento"],["VOC_CANC_DOR_Cancelamento Indevido","Cancelamento Indevido","Cancelamento"],["VOC_CANC_DOR_Adequação/Promoção e Desconto","Quer desconto/promoção","Cancelamento"],["VOC_Bolha de esforço","Cliente menciona esforço para resolver","Experiência do Cliente"],["VOC_ Reclamação Atendimento do APP/SITE","Cliente reclama do App/Site","Experiência do Cliente"],["P/S - Sobre Transferência de Titularidade","Transferência de titularidade","Produtos e serviços"],["P/S - Sobre Suspensão - Bloqueio/Desbloqueio","Sobre Suspensão/Bloqueio/Desbloqueio","Produtos e serviços"],["P/S - Sobre seguro proteção móvel","Sobre seguro proteção móvel","Produtos e serviços"],["P/S - Sobre Roaming","Roaming Internacional","Produtos e serviços"],["P/S - Sobre Recarga - Crédito","Sobre Recarga - Crédito","Produtos e serviços"],["P/S - Sobre Promoções","Sobre Promoções","Produtos e serviços"],["P/S - Sobre Portabilidade","Portabilidade","Produtos e serviços"],["P/S - Sobre Netflix","Sobre Netflix","Produtos e serviços"],["P/S - Sobre Franquia/Renovação","Sobre Franquia/Renovação","Produtos e serviços"],["P/S - Sobre Claro Clube","Sobre Claro Clube","Produtos e serviços"],["P/S - Sobre Cadastro de Linha","Cadastro de Linha","Produtos e serviços"],["P/S - Sobre Alteração Cadastral","Sobre Alteração Cadastral","Produtos e serviços"],["P/S - Sobre Agregador/Serviço Claro","Sobre Agregador/Serviço Claro","Produtos e serviços"],["P/S - Sobre - Troca de Número","Troca de Número","Produtos e serviços"],["P/S - Sobre - Smartcred","Sobre - Smartcred","Produtos e serviços"],["P/S - Sobre - Prezão","Sobre - Prezão","Produtos e serviços"],["P/S - Sobre - Pacote Adicional","Sobre Pacote adicional","Produtos e serviços"],["P/S - Sobre - Linha Dependente","Linha Dependente","Produtos e serviços"],["P/S - Sobre - Contratação/Alteração","Quero contratar/alterar o plano","Produtos e serviços"],["P/S - Sobre - Claro Flex","Claro Flex","Produtos e serviços"],["P/S - Pré - Renovação Parcial","Renovação Parcial","Produtos e serviços"],["P/S - Pré - Falha para Fazer Recarga","Dificuldade para fazer recarga","Produtos e serviços"],["P/S - Pré - Desconto Prezão Diário","Desconto Prezão Diário","Produtos e serviços"],["P/S - Pré - Cancelamento por falta recarga","Cancelamento por falta recarga","Produtos e serviços"],["P/S - O Quê - Troca de Chip","Troca de Chip","Produtos e serviços"],["P/S - O Quê - Recarga Não Entrou/Sumiu","Recarga Não Entrou/Sumiu","Produtos e serviços"],["P/S - O Quê - Não recebi o chip","Não recebeu o chip","Produtos e serviços"],["P/S - O Quê - Internet acaba rápido","Internet acaba rápido","Produtos e serviços"],["P/S - O Quê - Consumo Franquia","Consumo Franquia","Produtos e serviços"],["P/S - O Quê - Chamadas Publicitárias/Telemarketing","Reclamação de chamadas - Telemarketing","Produtos e serviços"],["P/S - O Quê - Ativação de Chip","Ativação de Chip","Produtos e serviços"],["P/S - O Quê - Aplicativos Ilimitados","Aplicativos Ilimitados","Produtos e serviços"],["P/S - Dor - Não pedi/Não solicitei","Não pedi/solicitei","Produtos e serviços"],["P/S - Ação - Port. Cancel/conflito/rejeitada","Port. Cancel/conflito/rejeitada","Produtos e serviços"],["Fraude - O quê - Não Cliente e não Reconhece Cobrança","Não Cliente e não Reconhece Cobrança","Fraude"],["Fraude - O quê - Fatura Falsa","Fatura Falsa","Fraude"],["Fraude - Dor - Situações de Fraude/Golpe","Fraude","Fraude"],["VOO_Script TNPS","Pesquisa_TNPS","Experiência do Cliente"],["VOO_TÉC_Excedeu a quantidade de envio sms","Excedeu a quantidade de envio sms","Técnico"],["VOC_TÉC_MOTIVO_Sem sinal de internet","Sem sinal de internet","Técnico"],["VOC_TÉC_MOTIVO_Sem sinal de telefone","Sem sinal de telefone","Técnico"],["VOC_TÉC_MOTIVO_Internet intermitente","Internet intermitente","Técnico"],["VOC_TÉC_MOTIVO_Internet lenta","Internet lenta","Técnico"],["VOC_TÉC_MOTIVO_Não faz/ não recebe chamadas","Problema - Não faz/não recebe chamadas","Técnico"],["VOC_TÉC_MOTIVO_Telefone Mudo","Problema - Telefone Mudo","Técnico"],["VOO_TÉC_Manutenção na região","Manutenção na região","Técnico"],["VOC_TÉC_MOTIVO_Problema ativação Streaming","Problema ativação Streaming","Técnico"],["VOO_TÉC_Aguardar prazo de ativação","Aguardar prazo de ativação","Técnico"],["VOO_TÉC_Atualização/configuração de aparelho","Atualização/configuração de aparelho","Técnico"],["VOO_TÉC_Envio do guia de aparelho sms","Envio do guia de aparelho sms","Técnico"],["VOO_TÉC_Prazo de atualização extrato","Prazo de atualização extrato","Técnico"],["VOO_TÉC_Pacote adicional/recarga","Pacote adicional/recarga","Técnico"],["VOO_TÉC_Encaminhamento BKO Técnico","Encaminhamento BKO Técnico","Técnico"]],"d":[["11","SP","São Paulo (capital e Grande SP)","Sudeste"],["12","SP","São José dos Campos / Vale do Paraíba","Sudeste"],["13","SP","Santos / Baixada Santista","Sudeste"],["14","SP","Bauru / Marília","Sudeste"],["15","SP","Sorocaba","Sudeste"],["16","SP","Ribeirão Preto / Araraquara","Sudeste"],["17","SP","São José do Rio Preto","Sudeste"],["18","SP","Presidente Prudente / Araçatuba","Sudeste"],["19","SP","Campinas / Piracicaba","Sudeste"],["21","RJ","Rio de Janeiro (capital e região)","Sudeste"],["22","RJ","Campos dos Goytacazes / Região dos Lagos","Sudeste"],["24","RJ","Volta Redonda / Petrópolis","Sudeste"],["27","ES","Vitória (Grande Vitória)","Sudeste"],["28","ES","Cachoeiro de Itapemirim","Sudeste"],["31","MG","Belo Horizonte (capital e região)","Sudeste"],["32","MG","Juiz de Fora","Sudeste"],["33","MG","Governador Valadares","Sudeste"],["34","MG","Uberlândia / Triângulo Mineiro","Sudeste"],["35","MG","Poços de Caldas / Pouso Alegre","Sudeste"],["37","MG","Divinópolis","Sudeste"],["38","MG","Montes Claros","Sudeste"],["41","PR","Curitiba (capital e região)","Sul"],["42","PR","Ponta Grossa","Sul"],["43","PR","Londrina","Sul"],["44","PR","Maringá","Sul"],["45","PR","Cascavel / Foz do Iguaçu","Sul"],["46","PR","Pato Branco / Francisco Beltrão","Sul"],["47","SC","Joinville / Blumenau / Itajaí","Sul"],["48","SC","Florianópolis / Criciúma","Sul"],["49","SC","Chapecó / Lages","Sul"],["51","RS","Porto Alegre (capital e região)","Sul"],["53","RS","Pelotas","Sul"],["54","RS","Caxias do Sul","Sul"],["55","RS","Santa Maria","Sul"],["61","DF","Brasília","Centro-Oeste"],["62","GO","Goiânia","Centro-Oeste"],["63","TO","Palmas","Norte"],["64","GO","Rio Verde / Itumbiara","Centro-Oeste"],["65","MT","Cuiabá","Centro-Oeste"],["66","MT","Rondonópolis / Sinop","Centro-Oeste"],["67","MS","Campo Grande","Centro-Oeste"],["68","AC","Rio Branco","Norte"],["69","RO","Porto Velho","Norte"],["71","BA","Salvador (capital e região)","Nordeste"],["73","BA","Ilhéus / Itabuna","Nordeste"],["74","BA","Juazeiro","Nordeste"],["75","BA","Feira de Santana","Nordeste"],["77","BA","Vitória da Conquista / Barreiras","Nordeste"],["79","SE","Aracaju","Nordeste"],["81","PE","Recife","Nordeste"],["82","AL","Maceió","Nordeste"],["83","PB","João Pessoa / Campina Grande","Nordeste"],["84","RN","Natal","Nordeste"],["85","CE","Fortaleza","Nordeste"],["86","PI","Teresina","Nordeste"],["87","PE","Petrolina / Caruaru (interior)","Nordeste"],["88","CE","Juazeiro do Norte / Sobral","Nordeste"],["89","PI","Picos / Floriano","Nordeste"],["91","PA","Belém","Norte"],["92","AM","Manaus","Norte"],["93","PA","Santarém","Norte"],["94","PA","Marabá","Norte"],["95","RR","Boa Vista","Norte"],["96","AP","Macapá","Norte"],["97","AM","Interior do Amazonas","Norte"],["98","MA","São Luís","Nordeste"],["99","MA","Imperatriz","Nordeste"]],"src":"Dado_Informativos_de_base.xlsx"}</script>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const norm=s=>String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/\s+/g," ").trim().toLowerCase();
-const txt=v=>String(v==null?"":v).replace(/\s+/g," ").trim();
-const fmt=n=>(n>0&&n<0.1)?"<0,1%":n.toFixed(1).replace(".",",")+"%";     /* tela: 1 casa */
-const fmtI=n=>(n>0&&n<0.5)?"<1%":Math.round(n)+"%";                      /* imagem: inteiro, como no Excel */
+const fmt=n=>(n>0&&n<0.1)?"<0,1%":n.toFixed(1).replace(".",",")+"%";
+const fmtI=n=>(n>0&&n<0.5)?"<1%":Math.round(n)+"%";
 const fint=n=>Math.round(n).toLocaleString("pt-BR");
-function parseP(v){
-  if(typeof v==="number")return isFinite(v)?v:null;
-  let s=txt(v).replace("%","").replace(/\s/g,"");if(!/\d/.test(s))return null;
-  if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");               /* 1.234,5 → 1234.5 ; 0.25 fica 0.25 */
-  const n=parseFloat(s);return isNaN(n)?null:n;
-}
-const isEmpty=v=>v==null||v===""||(typeof v==="string"&&!v.trim());
-
-/* ================= DDD ================= */
-const DDD_UF={};
-"11:SP,12:SP,13:SP,14:SP,15:SP,16:SP,17:SP,18:SP,19:SP,21:RJ,22:RJ,24:RJ,27:ES,28:ES,31:MG,32:MG,33:MG,34:MG,35:MG,37:MG,38:MG,41:PR,42:PR,43:PR,44:PR,45:PR,46:PR,47:SC,48:SC,49:SC,51:RS,53:RS,54:RS,55:RS,61:DF,62:GO,63:TO,64:GO,65:MT,66:MT,67:MS,68:AC,69:RO,71:BA,73:BA,74:BA,75:BA,77:BA,79:SE,81:PE,82:AL,83:PB,84:RN,85:CE,86:PI,87:PE,88:CE,89:PI,91:PA,92:AM,93:PA,94:PA,95:RR,96:AP,97:AM,98:MA,99:MA"
-  .split(",").forEach(p=>{const [d,u]=p.split(":");DDD_UF[d]=u});
-const digits=v=>String(v==null?"":v).replace(/\D/g,"");
-/* mesma regra da planilha: ANI com 55 → DDD = dígitos 3-4; senão MSISDN (10+ dígitos) → 2 primeiros.
-   Extras de segurança: ANI sem 55, campo "DDD Cliente" e telefone com 0 de operadora. */
-function dddOf(ani,msisdn,dcli,uf){
-  const ok=d=>d&&uf[d]?d:null;
-  const a=digits(ani),m=digits(msisdn),c=digits(dcli);
-  let d=null;
-  if(a.startsWith("55")&&a.length>=12)d=ok(a.slice(2,4));
-  if(!d&&m.length>=10)d=ok(m.slice(0,2));
-  if(!d&&a.length>=10&&a.length<=11)d=ok(a.slice(0,2));
-  if(!d&&a.length>=12&&a[0]==="0")d=ok(a.slice(3,5));
-  if(!d&&c.length===2)d=ok(c);
-  return d;
-}
 const dddStr=t=>t.d+" - "+t.uf+" ("+fmtI(t.p)+")";
+const XLSX_URL="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
 
-/* ================= leitura das abas ================= */
-function rowsOf(wb,name,maxRows){
-  const ws=wb.Sheets[name];if(!ws||!ws["!ref"])return[];
-  const r=XLSX.utils.decode_range(ws["!ref"]);r.s.r=0;r.s.c=0;
-  if(maxRows)r.e.r=Math.min(r.e.r,maxRows-1);
-  return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:"",range:r,blankrows:true});
+/* ================= base DePara (embutida + atualização opcional) ================= */
+const DEFAULT_REF=JSON.parse(document.getElementById("ref-padrao").textContent);
+let REF=null,REFV=0;
+function buildRef(raw,meta){
+  const mk=rows=>{const m=new Map();(rows||[]).forEach(([n,l,j])=>{const k=norm(n);if(k&&!m.has(k))m.set(k,{l,j})});return m};
+  const uf={};(raw.d||[]).forEach(r=>{uf[r[0]]=r[1]});
+  return{hfc:mk(raw.h),movel:mk(raw.m),uf,raw,meta:meta||{src:"padrão"}};
 }
-function findHeader(rows){
-  for(let r=0;r<Math.min(rows.length,40);r++){
-    const cols={};
-    (rows[r]||[]).forEach((c,i)=>{
-      const s=norm(c);if(!s||typeof c==="number")return;
-      if(/^nome\b/.test(s)&&cols.nome==null)cols.nome=i;
-      else if(/^(valor|qtd|quantidade|volume)\b/.test(s)&&cols.val==null)cols.val=i;
-      else if(/^percent|^%/.test(s)&&cols.pct==null)cols.pct=i;
-      else if(/nomenclatura|motivo/.test(s)&&cols.mot==null)cols.mot=i;
-      else if(/^jornada\b/.test(s)&&cols.jor==null)cols.jor=i;
-    });
-    if(cols.jor!=null&&(cols.mot!=null||cols.nome!=null)&&(cols.pct!=null||cols.val!=null))return{r,cols};
-  }
-  return null;
+function loadRef(){
+  let saved=null;
+  try{const s=localStorage.getItem("speech_ref_v1");if(s)saved=JSON.parse(s)}catch(e){}
+  if(saved&&saved.raw&&(saved.raw.h||saved.raw.m)){
+    const r={h:saved.raw.h||DEFAULT_REF.h,m:saved.raw.m||DEFAULT_REF.m,d:saved.raw.d||DEFAULT_REF.d};
+    REF=buildRef(r,saved.meta);
+  }else REF=buildRef(DEFAULT_REF,{src:"padrão"});
+  REFV++;
 }
-function readDePara(wb,seg){
-  const names=wb.SheetNames.filter(n=>/de\s*para/i.test(n)&&!/ddd/i.test(n));
-  const pick=(seg==="movel"?names.find(n=>/movel/.test(norm(n))):names.find(n=>/hfc|resid/.test(norm(n))))||names[0];
-  const dep={},rev={};
-  if(!pick)return{dep,rev,sheet:null};
-  rowsOf(wb,pick).forEach((r,i)=>{
-    if(!i||!txt(r[0]))return;
-    const k=norm(r[0]);dep[k]=[txt(r[1]),txt(r[2])];
-    const rk=norm(r[1])+"|"+norm(r[2]);(rev[rk]||(rev[rk]=[])).push(txt(r[0]));
+function setRef(raw,name){
+  const r={h:raw.h||REF.raw.h,m:raw.m||REF.raw.m,d:raw.d||REF.raw.d};
+  const meta={src:name,em:new Date().toLocaleString("pt-BR")};
+  REF=buildRef(r,meta);REFV++;
+  try{localStorage.setItem("speech_ref_v1",JSON.stringify({raw:r,meta}))}catch(e){}
+}
+function resetRef(){try{localStorage.removeItem("speech_ref_v1")}catch(e){}REF=buildRef(DEFAULT_REF,{src:"padrão"});REFV++}
+loadRef();
+
+/* ================= leitura em segundo plano (Web Worker) ================= */
+const PARSER_SRC=document.getElementById("parser-src").textContent;
+let POOL=null,WORKER_OK=true,MAIN_PARSER=null;
+function mainParse(buf){
+  if(typeof XLSX==="undefined")throw new Error("a biblioteca de leitura (SheetJS) não carregou; verifique a conexão e recarregue a página");
+  if(!MAIN_PARSER)MAIN_PARSER=(new Function(PARSER_SRC+";return SPEECH_PARSER;"))()(XLSX);
+  return MAIN_PARSER.parse(new Uint8Array(buf),Object.keys(REF.uf));
+}
+function makePool(){
+  const code=PARSER_SRC+`
+let P=null;
+self.onmessage=e=>{const {id,buf,valid,url}=e.data;
+  try{if(!self.XLSX)importScripts(url);}catch(err){postMessage({id,infra:true,err:String(err&&err.message||err)});return}
+  try{if(!P)P=SPEECH_PARSER(self.XLSX);const r=P.parse(new Uint8Array(buf),valid);
+    const tr=[];if(r.ddd){tr.push(r.ddd.codes.buffer);for(const k in r.ddd.cols)tr.push(r.ddd.cols[k].buffer)}
+    postMessage({id,r},tr);
+  }catch(err){postMessage({id,err:String(err&&err.message||err)})}
+};`;
+  const url=URL.createObjectURL(new Blob([code],{type:"text/javascript"}));
+  const n=Math.max(1,Math.min(3,(navigator.hardwareConcurrency||2)-1));
+  const ws=[];for(let i=0;i<n;i++)ws.push({w:new Worker(url),busy:false});
+  return ws;
+}
+let JOB=0;
+function parseInWorker(buf){
+  return new Promise((res,rej)=>{
+    const run=()=>{
+      const slot=POOL.find(s=>!s.busy);if(!slot){setTimeout(run,30);return}
+      slot.busy=true;const id=++JOB;
+      const done=()=>{slot.busy=false;slot.w.removeEventListener("message",on);slot.w.removeEventListener("error",onErr)};
+      const on=e=>{if(e.data.id!==id)return;done();
+        if(e.data.infra){rej({infra:true,message:e.data.err});return}
+        e.data.err?rej(new Error(e.data.err)):res(e.data.r)};
+      const onErr=e=>{done();e.preventDefault&&e.preventDefault();rej({infra:true,message:e.message})};
+      slot.w.addEventListener("message",on);slot.w.addEventListener("error",onErr);
+      slot.w.postMessage({id,buf,valid:Object.keys(REF.uf),url:XLSX_URL},[buf]);
+    };
+    run();
   });
-  return{dep,rev,sheet:pick};
 }
-function parseMotivos(rows,h,dp){
-  const {cols}=h;
-  let total=null;
-  for(let r=0;r<h.r&&total==null;r++)for(const c of rows[r]){if(typeof c==="number"&&c>0){total=c;break}}
-  const raw=[];
-  for(const r of rows.slice(h.r+1)){
-    const nome=cols.nome!=null?txt(r[cols.nome]):"";
-    let label=cols.mot!=null?txt(r[cols.mot]):"",jor=txt(r[cols.jor]);
-    const dpv=nome&&dp.dep[norm(nome)];
-    if(dpv){label=label||dpv[0];jor=jor||dpv[1]}
-    if(!label||!jor||/^#|^0$/.test(label))continue;
-    const val=cols.val!=null&&typeof r[cols.val]==="number"?r[cols.val]:null;
-    const p=cols.pct!=null?parseP(r[cols.pct]):null;
-    raw.push({nome,label,jor,val,p});
+async function parseFile(f){
+  const buf=await f.arrayBuffer();
+  if(WORKER_OK){
+    if(!POOL){try{POOL=makePool()}catch(e){WORKER_OK=false}}
+    if(WORKER_OK)try{return await parseInWorker(buf.slice(0))}
+    catch(e){if(!e||!e.infra)throw e;WORKER_OK=false}           /* worker indisponível: segue na página */
   }
-  if(!raw.length)return null;
-  /* percentual: Valor/Total quando houver; senão a coluna de %, decidindo fração × pontos só pelos motivos mapeados */
-  const ps=raw.map(x=>x.p).filter(x=>x!=null);
-  const frac=ps.length>0&&Math.max(...ps)<=1.0001;
-  const by={};let mapped=0;
-  for(const x of raw){
-    let pct=null;
-    if(x.val!=null&&total)pct=x.val/total*100;
-    else if(x.p!=null)pct=frac?x.p*100:x.p;
-    if(pct==null||!isFinite(pct))continue;
-    mapped++;
-    const g=by[x.jor]||(by[x.jor]=new Map());
-    const k=norm(x.label),o=g.get(k);
-    if(o){o.pct+=pct;if(x.val!=null)o.val=(o.val||0)+x.val;if(x.nome)o.nomes.push(x.nome)}
-    else g.set(k,{label:x.label,pct,val:x.val,nomes:x.nome?[x.nome]:[],jor:x.jor});
-  }
-  if(!mapped)return null;
-  const journeys=Object.keys(by).map(t=>({title:t,items:[...by[t].values()].sort((a,b)=>b.pct-a.pct)}))
-    .sort((a,b)=>b.items[0].pct-a.items[0].pct);
-  return{total,journeys,mapped,hasNome:cols.nome!=null&&cols.val!=null};
-}
-function extractJornadas(wb,dp){
-  let best=null;
-  for(const n of wb.SheetNames){
-    if(/de\s*para|apoio/i.test(n))continue;
-    const h=findHeader(rowsOf(wb,n,40));if(!h)continue;
-    const d=parseMotivos(rowsOf(wb,n),h,dp);if(!d)continue;
-    d.sheet=n;
-    const score=(d.hasNome?1e6:0)+d.mapped;
-    if(!best||score>best.score)best={...d,score};
-  }
-  return best;
-}
-/* Aba bruta do Verint (ex.: "Base DDD"): cabeçalho com Nº / ANI / MSISDN e uma coluna por categoria */
-function extractDDD(wb,uf){
-  for(const n of wb.SheetNames){
-    if(/de\s*para|apoio/i.test(n))continue;
-    const head=rowsOf(wb,n,400);
-    let hr=-1,ci={};
-    for(let r=0;r<head.length;r++){
-      const row=head[r]||[],m={};
-      row.forEach((c,i)=>{const s=norm(c);
-        if(s==="ani"&&m.ani==null)m.ani=i;
-        else if(s==="msisdn"&&m.ms==null)m.ms=i;
-        else if(s==="ddd cliente"&&m.dc==null)m.dc=i;});
-      if(m.ani!=null||m.ms!=null){hr=r;ci=m;break}
-    }
-    if(hr<0)continue;
-    const rows=rowsOf(wb,n),H=rows[hr];
-    const colOf=new Map();
-    H.forEach((c,i)=>{const k=norm(c);if(k&&!colOf.has(k))colOf.set(k,i)});
-    const data=[];
-    for(let r=hr+1;r<rows.length;r++){
-      const row=rows[r];if(!row||row.every(isEmpty))continue;
-      if(isEmpty(row[0])&&isEmpty(row[ci.ani])&&isEmpty(row[ci.ms]))continue;
-      data.push({row,d:dddOf(row[ci.ani],row[ci.ms],row[ci.dc],uf)});
-    }
-    if(!data.length)continue;
-    const rank={};data.forEach(x=>{if(x.d)rank[x.d]=(rank[x.d]||0)+1});
-    const idn=data.filter(x=>x.d).length;
-    /* data da extração (linhas antes do cabeçalho) */
-    let date=null,inter=null;
-    for(let r=0;r<hr;r++){
-      const row=rows[r]||[],k0=norm(row[0]);
-      if(inter==null&&/^interacoes\b/.test(k0))for(const c of row.slice(1)){const m=String(c).match(/^\s*([\d.]+)/);if(m){inter=+m[1].replace(/\./g,"");break}}
-      if(date)continue;
-      if(/data de inicio|data de termino|criado em/.test(norm(row[0])))
-        for(const c of row){const dt=toISO(c);if(dt){date=dt;break}}
-    }
-    return{sheet:n,colOf,data,total:data.length,inter:inter||null,idn,rank,date};
-  }
-  return null;
-}
-/* Sem aba bruta: aproveita uma aba já calculada com "Resumo para o report" (ex.: "DDD x Motivo") */
-function extractResumo(wb){
-  const out=new Map();let sheet=null,inter=null;
-  for(const n of wb.SheetNames){
-    if(/apoio/i.test(n))continue;
-    const rows=rowsOf(wb,n,400);let cm=-1,cr=-1;
-    rows.forEach(row=>{
-      if(inter==null&&/^interacoes na extracao/.test(norm(row&&row[0])))for(const c of row.slice(1))if(typeof c==="number"&&c>0){inter=c;break}
-      (row||[]).forEach((c,i)=>{const s=norm(c);if(/^motivo/.test(s))cm=i;if(/resumo/.test(s))cr=i});
-      if(cm>=0&&cr>=0&&row[cm]&&row[cr]&&!/^motivo/.test(norm(row[cm]))){
-        const top=[];String(row[cr]).replace(/(\d{2})\s*-\s*([A-Z]{2})\s*\((\d+(?:[.,]\d+)?)%\)/g,(_,d,u,p)=>{top.push({d,uf:u,p:parseFloat(p.replace(",",".")),q:null})});
-        if(top.length){out.set(norm(row[cm]),top);sheet=n}
-      }
-    });
-  }
-  return out.size?{sheet,map:out,inter}:null;
-}
-function toISO(v){
-  if(v instanceof Date&&!isNaN(v))return v.getFullYear()+"-"+String(v.getMonth()+1).padStart(2,"0")+"-"+String(v.getDate()).padStart(2,"0");
-  const m=String(v||"").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  return m?m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0"):null;
-}
-function readDeParaDDD(wb){
-  const uf={...DDD_UF};
-  const n=wb.SheetNames.find(s=>/de\s*para/i.test(s)&&/ddd/i.test(s));
-  if(n)rowsOf(wb,n).forEach((r,i)=>{const d=digits(r[0]);if(i&&d.length===2&&/^[A-Z]{2}$/.test(txt(r[1])))uf[d]=txt(r[1])});
-  return uf;
-}
-function attachDDD(data,raw,resumo,dp,uf){
-  let ok=0,miss=0;
-  for(const j of data.journeys)for(const it of j.items){
-    it.ddd=null;
-    if(raw){
-      let names=it.nomes.length?it.nomes:(dp.rev[norm(it.label)+"|"+norm(it.jor)]||[]);
-      const cols=[...new Set(names.map(nm=>raw.colOf.get(norm(nm))).filter(c=>c!=null))];
-      if(cols.length){
-        const cnt={};let n=0,ni=0;
-        for(const x of raw.data){
-          if(!cols.some(c=>!isEmpty(x.row[c])))continue;
-          if(x.d){cnt[x.d]=(cnt[x.d]||0)+1;n++}else ni++;
-        }
-        const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||a.localeCompare(b)).slice(0,3)
-          .map(d=>({d,uf:uf[d]||"",q:cnt[d],p:cnt[d]/n*100}));
-        it.ddd={n,ni,top};ok++;continue;
-      }
-    }
-    if(resumo){const t=resumo.map.get(norm(it.label));if(t){it.ddd={n:null,ni:0,top:t};ok++;continue}}
-    if(raw||resumo)miss++;
-  }
-  return{ok,miss};
+  await new Promise(r=>setTimeout(r,0));
+  return mainParse(buf);
 }
 
-/* ================= boletins e arquivos ================= */
+/* ================= boletins, arquivos e cálculo ================= */
 const BOL=[
-  {k:"massivo",t:"BOLETIM N1 MASSIVO",tab:"N1 Massivo",re:/massivo/},
-  {k:"combo",  t:"BOLETIM N1 COMBO",  tab:"N1 Combo",  re:/combo/},
-  {k:"crc",    t:"BOLETIM CRC",       tab:"CRC",       re:/\bcrc\b|crc/},
+  {k:"massivo",t:"BOLETIM N1 MASSIVO",tab:"N1 Massivo",re:/massiv/},
+  {k:"cm",     t:"BOLETIM CM N1",     tab:"CM N1",     re:/\bcm\b|combo/},
+  {k:"crc",    t:"BOLETIM CRC",       tab:"CRC",       re:/\bcrc\b/},
   {k:"ret",    t:"RETENÇÃO",          tab:"Retenção",  re:/reten/}
 ];
-let FILES=[],NEXT=1,ACTIVE=null,LAST=null,GEN=false,DATE_TOUCHED=false;
+let FILES=[],NEXT=1,ACTIVE=null,LAST=null,GEN=false,DATE_TOUCHED=false,SEG="residencial",SEG_TOUCHED=false;
 const V={q:"",all:false,zeros:false};
-
-function parseWorkbook(buf){
-  const base={type:"array",cellDates:true,cellFormula:false,cellHTML:false,cellText:false};
-  let names=null;
-  try{names=XLSX.read(buf,{type:"array",bookSheets:true}).SheetNames}catch(e){}
-  /* abas auxiliares enormes (ex.: "Apoio DDD" com 20 mil linhas de fórmula) não são necessárias */
-  const keep=names&&names.length>1?names.filter(n=>!/^apoio/i.test(n)):null;
-  return XLSX.read(buf,keep&&keep.length?{...base,sheets:keep}:base);
+const kindOf=f=>!f.r?"erro":f.r.cat&&f.r.ddd?"ambos":f.r.cat?"cat":f.r.ddd?"ddd":f.r.ref?"ref":"erro";
+const keyStr=s=>norm(s).replace(/\.(xlsx|xlsm|xls|csv)$/,"").replace(/[_\-.()]+/g," ");
+const stem=f=>keyStr(f.name).replace(/\bddd\b/g,"").replace(/\s+/g," ").trim();
+function detectKey(f){
+  for(const s of [keyStr(f.name),keyStr(f.r&&f.r.meta.title||"")]){const b=BOL.find(b=>b.re.test(s));if(b)return b.k}
+  return null;
 }
-/* segmento: Residencial (DePara HFC) ou Móvel (DePara Móvel) */
-let SEG="residencial",SEG_TOUCHED=false;
-function detectSeg(name,wb){
-  let s=norm(name);
-  for(const n of wb.SheetNames){if(/de\s*para|apoio/i.test(n))continue;
-    rowsOf(wb,n,15).forEach(r=>{const k=norm(r[0]);if(/nome do projeto|custom data|segmento/.test(k))s+=" "+norm(r.join(" "))})}
-  const m=/movel|pos[- ]?pago|pre[- ]?pago|controle/.test(s),r=/residencial|hfc|fibra|combo|massivo/.test(s);
+function detectSeg(f){
+  const s=norm([f.name,f.r&&f.r.meta.proj,f.r&&f.r.meta.title].join(" "));
+  const m=/movel|pos pago|pre pago|controle/.test(s),r=/residencial|hfc|fibra|combo|massivo/.test(s);
   return m&&!r?"movel":r&&!m?"residencial":null;
 }
-function processWB(name,wb){
-  try{
-    const dp=readDePara(wb,SEG);
-    const data=extractJornadas(wb,dp);
-    if(!data)return{name,wb,sheetNames:wb.SheetNames,data:null,err:"não achei colunas de Motivo, Percentual e Jornada (abas: "+wb.SheetNames.join(", ")+")"};
-    let dd=null,warn=null;
-    try{
-      const uf=readDeParaDDD(wb),raw=extractDDD(wb,uf),resumo=raw?null:extractResumo(wb);
-      if(raw||resumo){
-        const r=attachDDD(data,raw,resumo,dp,uf);
-        dd={src:raw?"bruta":"resumo",sheet:raw?raw.sheet:resumo.sheet,total:raw?raw.total:null,inter:raw?raw.inter:(resumo.inter||null),idn:raw?raw.idn:null,
-            rank:raw?raw.rank:null,date:raw?raw.date:null,ok:r.ok,miss:r.miss};
-      }
-    }catch(err){warn="não consegui ler o DDD ("+(err&&err.message||"erro")+")"}
-    return{name,wb,sheetNames:wb.SheetNames,data,dd,warn,dpSheet:dp.sheet,err:null};
-  }catch(err){return{name,wb,data:null,err:"erro ao ler os dados ("+(err&&err.message||"erro")+")"}}
-}
-function readFile(f){return new Promise(res=>{
-  const rd=new FileReader();
-  rd.onerror=()=>res({name:f.name,data:null,err:"não consegui abrir o arquivo (ele pode estar aberto em outro programa)"});
-  rd.onload=e=>{
-    let wb;
-    try{wb=parseWorkbook(new Uint8Array(e.target.result))}
-    catch(err){res({name:f.name,data:null,err:"formato não reconhecido ("+(err&&err.message||"erro")+")"});return}
-    let seg=null;try{seg=detectSeg(f.name,wb)}catch(err){}
-    const r=processWB(f.name,wb);r.seg=seg;res(r);
-  };
-  rd.readAsArrayBuffer(f);
-})}
-function setSeg(s,manual){
-  if(manual)SEG_TOUCHED=true;
-  const changed=s!==SEG;SEG=s;
-  $("segR").checked=s==="residencial";$("segM").checked=s==="movel";
-  document.documentElement.style.setProperty("--seg",s==="movel"?"#A90000":"#001969");
-  if(changed)FILES=FILES.map(f=>f.wb?Object.assign(processWB(f.name,f.wb),{id:f.id,assign:f.assign,autoAll:f.autoAll,seg:f.seg}):f);
-  return changed;
-}
-function detectKey(r){
-  const s=norm(r.name+" "+(r.sheetNames||[]).join(" "));
-  const b=BOL.find(b=>b.re.test(s));return b?b.k:null;
-}
 function autoAssign(){
-  const ok=FILES.filter(x=>x.data);
-  /* um arquivo sozinho vale para os 4; quando chega outro, ele volta a ocupar um boletim só */
-  if(ok.length>1)ok.filter(f=>f.assign==="all"&&f.autoAll).forEach(f=>{f.assign=null;f.autoAll=false});
-  FILES.filter(f=>f.assign==null).forEach(f=>{
-    if(!f.data){f.assign="skip";return}
-    const k=detectKey(f);
-    if(k){f.assign=k;return}
-    if(ok.length===1){f.assign="all";f.autoAll=true;return}
-    const used=new Set(FILES.filter(x=>x.assign&&x.assign!=="all"&&x.assign!=="skip").map(x=>x.assign));
-    const free=BOL.find(b=>!used.has(b.k));
+  const data=FILES.filter(f=>["cat","ddd","ambos"].includes(kindOf(f)));
+  /* 1) pelo nome do arquivo ou pelo título do relatório */
+  data.filter(f=>f.assign==null).forEach(f=>{const k=detectKey(f);if(k)f.assign=k});
+  /* 2) arquivo de DDD acompanha o de categorias com o mesmo nome (ex.: CM_N1_24.11_12H e CM_N1_24.11_12H_DDD) */
+  data.filter(f=>f.assign==null&&kindOf(f)==="ddd").forEach(f=>{
+    const twin=data.find(o=>o!==f&&o.assign&&o.assign!=="skip"&&kindOf(o)!=="ddd"&&stem(o)===stem(f));if(twin)f.assign=twin.assign});
+  /* 3) o que sobrar ocupa o primeiro boletim livre para aquele tipo */
+  data.filter(f=>f.assign==null).forEach(f=>{
+    const isD=kindOf(f)==="ddd",isC=kindOf(f)!=="ddd";
+    const free=BOL.find(b=>!data.some(o=>o!==f&&o.assign===b.k&&((isC&&kindOf(o)!=="ddd")||(isD&&kindOf(o)!=="cat"))));
     f.assign=free?free.k:"skip";
   });
+  FILES.filter(f=>!["cat","ddd","ambos"].includes(kindOf(f))).forEach(f=>f.assign="skip");
 }
-function fileFor(k){
-  const ok=FILES.filter(f=>f.data);
-  return ok.filter(f=>f.assign===k).pop()||ok.filter(f=>f.assign==="all").pop()||null;
+const catFile=k=>FILES.filter(f=>f.assign===k&&(kindOf(f)==="cat"||kindOf(f)==="ambos")).pop()||null;
+const dddFile=k=>FILES.filter(f=>f.assign===k&&kindOf(f)==="ddd").pop()||FILES.filter(f=>f.assign===k&&kindOf(f)==="ambos").pop()||null;
+
+const CACHE=new Map();
+function CARD(k){
+  const cf=catFile(k);if(!cf)return null;
+  const df=dddFile(k),key=[cf.id,df?df.id:0,SEG,REFV].join("|");
+  if(CACHE.has(k)&&CACHE.get(k).key===key)return CACHE.get(k).card;
+  const card=buildCard(cf,df);CACHE.set(k,{key,card});return card;
+}
+function buildCard(cf,df){
+  const cat=cf.r.cat,total=cat.total,dp=SEG==="movel"?REF.movel:REF.hfc,alt=SEG==="movel"?REF.hfc:REF.movel;
+  const ps=cat.rows.map(r=>r.p).filter(x=>x!=null),frac=ps.length>0&&Math.max(...ps)<=1.0001;
+  const by={},unm=[];let mapped=0,fromAlt=0;
+  for(const row of cat.rows){
+    const k=norm(row.n);let m=dp.get(k);
+    if(!m&&row.l&&row.j)m={l:row.l,j:row.j};                       /* nomenclatura que já vem no próprio arquivo */
+    if(!m){if((row.v||0)>0||(row.p||0)>0)unm.push(row);continue}
+    let pct=null;
+    if(row.v!=null&&total)pct=row.v/total*100;
+    else if(row.p!=null)pct=frac?row.p*100:row.p;
+    if(pct==null||!isFinite(pct))continue;
+    mapped++;
+    const g=by[m.j]||(by[m.j]=new Map()),lk=norm(m.l),o=g.get(lk);
+    if(o){o.pct+=pct;if(row.v!=null)o.val=(o.val||0)+row.v;o.nomes.push(row.n)}
+    else g.set(lk,{label:m.l,pct,val:row.v,nomes:[row.n],jor:m.j});
+  }
+  const journeys=Object.keys(by).map(t=>({title:t,items:[...by[t].values()].sort((a,b)=>b.pct-a.pct)}))
+    .sort((a,b)=>b.items[0].pct-a.items[0].pct);
+  let dd=null;
+  if(df&&df.r.ddd){
+    const D=df.r.ddd,mark=new Uint8Array(D.n);
+    let ok=0,miss=0;
+    for(const j of journeys)for(const it of j.items){
+      const lists=[...new Set(it.nomes.map(norm))].map(n=>D.cols[n]).filter(Boolean);
+      if(!lists.length){it.ddd=null;miss++;continue}
+      mark.fill(0);const cnt={};let n=0,ni=0;
+      for(const L of lists)for(let i=0;i<L.length;i++){const r=L[i];if(mark[r])continue;mark[r]=1;const c=D.codes[r];if(c){cnt[c]=(cnt[c]||0)+1;n++}else ni++}
+      const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||D.dl[a-1].localeCompare(D.dl[b-1])).slice(0,3)
+        .map(c=>({d:D.dl[c-1],uf:REF.uf[D.dl[c-1]]||"",q:cnt[c],p:cnt[c]/n*100}));
+      it.ddd={n,ni,top};ok++;
+    }
+    const rank={};for(let i=0;i<D.n;i++){const c=D.codes[i];if(c)rank[D.dl[c-1]]=(rank[D.dl[c-1]]||0)+1}
+    dd={file:df.name,sheet:D.sheet,n:D.n,inter:D.meta.inter||D.n,idn:D.idn,rank,ok,miss};
+  }
+  return{total,totalSrc:cat.totalSrc,catFile:cf.name,catSheet:cat.sheet,journeys,mapped,unm:unm.sort((a,b)=>(b.v||0)-(a.v||0)),fromAlt,nRows:cat.rows.length,dd,date:cat.meta.ini||null};
 }
 function status(t,err){const s=$("status");s.textContent=t;s.className=err?"err":""}
 async function addFiles(list){
   list=[...list];if(!list.length)return;
-  if(typeof XLSX==="undefined"){status("A biblioteca de leitura (SheetJS) não carregou. Verifique a conexão ou o bloqueio do cdnjs e recarregue a página.",true);return}
+  const t0=performance.now();let done=0;
   status("Lendo "+list.length+" arquivo(s)…");
-  for(const f of list){
-    const r=await readFile(f);
-    FILES=FILES.filter(x=>x.name!==r.name);
-    r.id=NEXT++;r.assign=null;FILES.push(r);
-  }
+  await Promise.all(list.map(async f=>{
+    let rec;
+    try{const r=await parseFile(f);rec={name:f.name,r}}
+    catch(err){rec={name:f.name,r:null,err:"não consegui ler ("+(err&&err.message||"erro")+")"}}
+    if(rec.r&&kindOf(rec)==="erro")rec.err="não achei tabela de categorias (Nome/Valor), dados de interação (ANI/MSISDN) nem DePara (abas: "+rec.r.sheets.join(", ")+")";
+    if(rec.r&&kindOf(rec)==="ref"){setRef(rec.r.ref,f.name);CACHE.clear()}
+    FILES=FILES.filter(x=>x.name!==rec.name);rec.id=NEXT++;rec.assign=null;FILES.push(rec);
+    status("Lendo arquivos… "+(++done)+" de "+list.length);
+  }));
   autoAssign();ACTIVE=null;
-  if(!SEG_TOUCHED){const ss=FILES.map(f=>f.seg).filter(Boolean);if(ss.length){const m=ss.filter(s=>s==="movel").length;setSeg(m>ss.length-m?"movel":"residencial")}}
+  if(!SEG_TOUCHED){const ss=FILES.map(detectSeg).filter(Boolean);if(ss.length){const m=ss.filter(s=>s==="movel").length;setSeg(m>ss.length-m?"movel":"residencial")}}
   if(!DATE_TOUCHED){
-    const ds=FILES.map(f=>f.dd&&f.dd.date).filter(Boolean);
+    const ds=FILES.filter(f=>f.r&&f.r.cat).map(f=>f.r.cat.meta.ini||f.r.meta.ini).filter(Boolean);
     if(ds.length){const c={};ds.forEach(d=>c[d]=(c[d]||0)+1);$("dt").value=Object.keys(c).sort((a,b)=>c[b]-c[a])[0];$("dtSrc").textContent="lida do arquivo"}
   }
   const bad=FILES.filter(f=>f.err).length;
-  status(FILES.length+" arquivo(s) na lista"+(bad?" · "+bad+" com problema":""),!!bad&&bad===FILES.length);
+  status(FILES.length+" arquivo(s) na lista · lidos em "+((performance.now()-t0)/1000).toFixed(1).replace(".",",")+" s"+(bad?" · "+bad+" com problema":""),!!bad&&bad===FILES.length);
   refresh();
+}
+function setSeg(s,manual){
+  if(manual)SEG_TOUCHED=true;SEG=s;
+  $("segR").checked=s==="residencial";$("segM").checked=s==="movel";
+  document.documentElement.style.setProperty("--seg",s==="movel"?"#A90000":"#001969");
 }
 
 /* ================= tela ================= */
 function barRow(i,k,max){
   const w=Math.max(2,i.pct/max*100);
   const v=i.val!=null?`<small>${fint(i.val)}</small>`:"";
-  const dd=i.ddd&&i.ddd.top.length?`<div class="dd">DDD: ${i.ddd.top.map(t=>esc(dddStr(t))).join(" · ")}${i.ddd.n!=null?` <span>(${fint(i.ddd.n)} interações)</span>`:""}</div>`:"";
+  const dd=i.ddd&&i.ddd.top.length?`<div class="dd">DDD: ${i.ddd.top.map(t=>esc(dddStr(t))).join(" · ")} <span>(${fint(i.ddd.n)} interações)</span></div>`:"";
   return `<div class="row${k===0?" top":""}"><div class="rl"><span>${esc(i.label)}</span><span>${v}${fmt(i.pct)}</span></div><div class="bar"><i style="width:${w}%"></i></div>${dd}</div>`;
 }
-function dddInfo(f){
-  if(f.warn)return " · "+esc(f.warn);
-  if(!f.dd)return " · sem aba de DDD";
-  return f.dd.src==="bruta"?` · DDD: ${fint(f.dd.idn)} de ${fint(f.dd.total)} interações (aba ${esc(f.dd.sheet)})`:` · DDD do resumo (aba ${esc(f.dd.sheet)})`;
+const KIND_TXT={cat:"Categorias",ddd:"DDD",ambos:"Categorias + DDD",ref:"Base DePara"};
+function fileInfo(f){
+  if(f.err)return esc(f.err);
+  const r=f.r,k=kindOf(f),p=[`<span class="kt">${KIND_TXT[k]}</span>`];
+  if(r.cat)p.push(`aba ${esc(r.cat.sheet)} · ${fint(r.cat.rows.length)} categorias · `+(r.cat.total?`<b>${fint(r.cat.total)} interações</b>`:`<span class="warn">sem total de interações</span>`));
+  if(r.ddd)p.push(`${k==="ambos"?"DDD na aba "+esc(r.ddd.sheet)+" · ":""}${fint(r.ddd.n)} interações · ${fint(r.ddd.idn)} com DDD`);
+  if(r.ref)p.push(`${r.ref.h?r.ref.h.length+" HFC":""}${r.ref.m?" · "+r.ref.m.length+" Móvel":""}${r.ref.d?" · "+r.ref.d.length+" DDDs":""} · aplicada e salva neste navegador`);
+  return p.join(" · ");
 }
 function renderFiles(){
   $("files").innerHTML=FILES.map(f=>{
-    const info=f.err?esc(f.err):`aba ${esc(f.data.sheet)} · ${f.data.mapped} motivos`+(totalOf(f)?` · ${fint(totalOf(f))} interações`:"")+dddInfo(f);
-    const opts=BOL.map(b=>`<option value="${b.k}"${f.assign===b.k?" selected":""}>${b.tab}</option>`).join("")+
-      `<option value="all"${f.assign==="all"?" selected":""}>Todos os boletins</option><option value="skip"${f.assign==="skip"?" selected":""}>Ignorar</option>`;
-    return `<div class="f${f.err?" bad":""}" data-id="${f.id}"><div class="fi"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${info}</small></div>`+
-      (f.err?"":`<select aria-label="Boletim deste arquivo">${opts}</select>`)+
+    const k=kindOf(f);
+    const opts=BOL.map(b=>`<option value="${b.k}"${f.assign===b.k?" selected":""}>${b.tab}</option>`).join("")+`<option value="skip"${f.assign==="skip"?" selected":""}>Ignorar</option>`;
+    return `<div class="f${f.err?" bad":""}" data-id="${f.id}"><div class="fi"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${fileInfo(f)}</small></div>`+
+      (["cat","ddd","ambos"].includes(k)?`<select aria-label="Boletim deste arquivo">${opts}</select>`:"")+
       `<button type="button" class="x" aria-label="Remover arquivo" title="Remover">×</button></div>`;
   }).join("");
+  const m=REF.meta,custom=m.src!=="padrão";
+  $("refline").innerHTML=`Base DePara: <b>${custom?esc(m.src):"padrão embutida (Dado_Informativos_de_base)"}</b> · ${REF.hfc.size} HFC · ${REF.movel.size} Móvel · ${Object.keys(REF.uf).length} DDDs`+
+    (custom?` · atualizada em ${esc(m.em||"")} <button type="button" class="lnk" id="refReset">voltar ao padrão</button>`:` · para atualizar, carregue a planilha de base junto com os arquivos`);
 }
 function renderData(){
-  const has=BOL.filter(b=>fileFor(b.k));
-  if(!ACTIVE||!fileFor(ACTIVE))ACTIVE=has.length?has[0].k:null;
-  $("tabs").innerHTML=BOL.map(b=>`<button type="button" class="tab${fileFor(b.k)?"":" off"}${ACTIVE===b.k?" on":""}" data-k="${b.k}">${b.tab}${fileFor(b.k)?"":" · sem arquivo"}</button>`).join("");
-  const f=ACTIVE?fileFor(ACTIVE):null;
-  if(!f){$("kp").innerHTML="";$("grid").innerHTML='<div class="card empty" style="grid-column:1/-1">Nenhum arquivo atribuído a este boletim.</div>';return}
-  const d=f.data,q=norm(V.q);
-  const all=d.journeys.flatMap(j=>j.items.map(i=>({...i,j:j.title})));
-  const top=all.reduce((m,i)=>i.pct>m.pct?i:m,all[0]);
-  let kd=`<div><span>DDD</span><b>—</b><small>${f.warn?esc(f.warn):"arquivo sem aba de DDD"}</small></div>`;
-  if(f.dd&&f.dd.src==="bruta"){
-    const r=f.dd.rank,k0=Object.keys(r).sort((a,b)=>r[b]-r[a])[0];
-    kd=`<div><span>DDD identificado</span><b>${fint(f.dd.idn)}</b><small>de ${fint(f.dd.total)} interações${k0?` · principal ${k0} (${fmtI(r[k0]/f.dd.idn*100)})`:""}</small></div>`;
-  }else if(f.dd)kd=`<div><span>DDD</span><b>${f.dd.ok}</b><small>motivos com DDD (resumo da aba ${esc(f.dd.sheet)})</small></div>`;
+  const has=BOL.filter(b=>catFile(b.k));
+  if(!ACTIVE||!catFile(ACTIVE))ACTIVE=has.length?has[0].k:null;
+  $("tabs").innerHTML=BOL.map(b=>{const c=catFile(b.k);return `<button type="button" class="tab${c?"":" off"}${ACTIVE===b.k?" on":""}" data-k="${b.k}">${b.tab}${c?"":" · sem arquivo"}</button>`}).join("");
+  const d=ACTIVE?CARD(ACTIVE):null;
+  if(!d){$("kp").innerHTML="";$("val").innerHTML="";$("grid").innerHTML='<div class="card empty" style="grid-column:1/-1">Nenhum arquivo de categorias neste boletim. Ele não entra na imagem.</div>';return}
+  const q=norm(V.q),all=d.journeys.flatMap(j=>j.items.map(i=>({...i,j:j.title})));
+  const top=all.reduce((m,i)=>i.pct>m.pct?i:m,all[0]||{pct:0,label:"—",j:""});
+  let kd=`<div><span>DDD</span><b>—</b><small>sem arquivo de DDD neste boletim</small></div>`;
+  if(d.dd){const r=d.dd.rank,k0=Object.keys(r).sort((a,b)=>r[b]-r[a])[0];
+    kd=`<div><span>DDD identificado</span><b>${fint(d.dd.idn)}</b><small>de ${fint(d.dd.n)} interações${k0?` · principal ${k0} - ${REF.uf[k0]||""} (${fmtI(r[k0]/d.dd.idn*100)})`:""}</small></div>`}
   $("kp").innerHTML=
-    `<div><span>Total de interações</span><b>${totalOf(f)?fint(totalOf(f)):"—"}</b><small>${f.dd&&f.dd.src==="bruta"?"extração (aba "+esc(f.dd.sheet)+")":"aba "+esc(d.sheet)}${d.total&&d.total!==totalOf(f)?" · report: "+fint(d.total):""}</small></div>`+
+    `<div><span>Total de interações</span><b>${d.total?fint(d.total):"—"}</b><small>${esc(d.catFile)}${d.totalSrc==="celula"?" · célula do total":""}</small></div>`+
     `<div><span>Maior motivo</span><b>${fmt(top.pct)}</b><small>${esc(top.label)} · ${esc(top.j)}</small></div>`+
-    `<div><span>Motivos com ocorrência</span><b>${all.filter(i=>i.pct>0).length}</b><small>de ${all.length} em ${d.journeys.length} jornadas</small></div>`+kd;
+    `<div><span>Categorias com nomenclatura</span><b>${d.mapped}</b><small>de ${d.nRows} no arquivo · ${d.unm.length} com valor sem DePara</small></div>`+kd;
+  const warn=[];
+  if(!d.total)warn.push("O arquivo de categorias não traz o total de “Interações”: os percentuais ficaram sem base.");
+  if(d.dd&&d.dd.miss)warn.push(`${d.dd.miss} motivo(s) não aparecem como coluna no arquivo de DDD.`);
+  $("val").innerHTML=(warn.length?`<div class="wbox">${warn.map(esc).join("<br>")}</div>`:"")+
+    (d.unm.length?`<details class="unm"><summary>${d.unm.length} categoria(s) com valor e sem nomenclatura no DePara ${SEG==="movel"?"Móvel":"HFC"} (ficam fora dos cards)</summary><div>${d.unm.slice(0,60).map(r=>`<span>${esc(r.n)} <b>${r.v!=null?fint(r.v):fmt(r.p)}</b></span>`).join("")}${d.unm.length>60?`<span>+ ${d.unm.length-60}</span>`:""}</div></details>`:"");
   const cards=d.journeys.map(j=>{
     const items=j.items.filter(i=>(V.zeros||i.pct>0)&&(!q||norm(i.label).includes(q)));
     if(!items.length)return"";
-    const max=Math.max(...items.map(i=>i.pct),0.01);
-    const lim=(V.all||q)?items.length:8;
+    const max=Math.max(...items.map(i=>i.pct),0.01),lim=(V.all||q)?items.length:8;
     const more=items.length>lim?`<div class="more">+ ${items.length-lim} motivos (use “Ver todos os motivos”)</div>`:"";
     return `<section class="card"><div class="ch"><b>${esc(j.title)}</b><em>${items.length} motivos</em></div><div class="cb">${items.slice(0,lim).map((i,k)=>barRow(i,k,max)).join("")}${more}</div></section>`;
   }).join("");
   $("grid").innerHTML=cards||'<div class="card empty" style="grid-column:1/-1">Nenhum motivo encontrado para esse filtro.</div>';
 }
 function renderSide(){
-  const ok=FILES.filter(f=>f.data).length,filled=BOL.filter(b=>fileFor(b.k));
-  const missing=BOL.filter(b=>!fileFor(b.k)).map(b=>b.tab);
+  const ok=FILES.filter(f=>!f.err&&kindOf(f)!=="ref").length,filled=BOL.filter(b=>catFile(b.k));
+  const missing=BOL.filter(b=>!catFile(b.k)).map(b=>b.tab);
   const hasDate=!!$("dt").value,ready=filled.length>0&&hasDate;
-  const act=ACTIVE?fileFor(ACTIVE):null;
+  const act=ACTIVE?CARD(ACTIVE):null;
   $("n1").textContent=ok;$("n1").className=ok?"on":"";
   $("n2").textContent=filled.length+"/4";$("n2").className=filled.length?"on":"";
-  $("n3").textContent=totalOf(act)?fint(totalOf(act)):"—";$("n3").className=totalOf(act)?"on":"";
-  $("sT").textContent=ok?(filled.length===4?"Todos os boletins preenchidos":filled.length+" de 4 boletins preenchidos"):"Nenhum arquivo carregado";
-  $("sT").className=ok?"on":"";
-  $("sS").textContent=ok?(missing.length?"Faltam: "+missing.join(", "):"Pronto para gerar a imagem"):"Carregue os arquivos no passo 1";
-  $("pill").textContent=ready&&filled.length===4?"Pronto":"Em preenchimento";
-  $("pill").className="pill"+(ready&&filled.length===4?" ok":"");
+  $("n3").textContent=act&&act.total?fint(act.total):"—";$("n3").className=act&&act.total?"on":"";
+  $("sT").textContent=filled.length?(filled.length===1?"1 card na imagem":filled.length+" cards na imagem"):"Nenhum arquivo carregado";
+  $("sT").className=filled.length?"on":"";
+  $("sS").textContent=filled.length?(missing.length?"Fora da imagem (sem arquivo): "+missing.join(", "):"Os 4 boletins entram na imagem"):"Carregue os arquivos no passo 1";
+  $("pill").textContent=ready?"Pronto":"Em preenchimento";$("pill").className="pill"+(ready?" ok":"");
   $("c1").className="ci"+(ok?" ok":"");$("c1s").textContent=ok?ok+" arquivo(s) lido(s) com sucesso":"Carregue os arquivos no passo 1";
-  $("c2").className="ci"+(filled.length===4?" ok":"");$("c2s").textContent=filled.length?(missing.length?"Sem arquivo: "+missing.join(", "):"Os 4 boletins têm dados"):"Nenhum boletim preenchido";
-  const wD=filled.filter(b=>fileFor(b.k).dd),woD=filled.filter(b=>!fileFor(b.k).dd);
+  const noTot=filled.filter(b=>!CARD(b.k).total);
+  $("c2").className="ci"+(filled.length&&!noTot.length?" ok":"");
+  $("c2s").textContent=!filled.length?"Nenhum boletim preenchido":noTot.length?"Sem total de interações: "+noTot.map(b=>b.tab).join(", "):filled.map(b=>b.tab+" "+fint(CARD(b.k).total)).join(" · ");
+  const wD=filled.filter(b=>CARD(b.k).dd),woD=filled.filter(b=>!CARD(b.k).dd);
   $("c4").className="ci"+(filled.length&&!woD.length?" ok":"");
-  $("c4s").textContent=!filled.length?"Carregue os arquivos no passo 1":!wD.length?"Nenhum arquivo traz DDD · a imagem sai sem a coluna":
+  $("c4s").textContent=!filled.length?"Carregue os arquivos no passo 1":!wD.length?"Nenhum arquivo de DDD · a imagem sai sem DDD":
     (woD.length?"Com DDD: "+wD.map(b=>b.tab).join(", ")+" · sem DDD: "+woD.map(b=>b.tab).join(", "):"Todos os boletins com DDD");
   $("c3").className="ci"+(hasDate?" ok":"");$("c3s").textContent=hasDate?$("dt").value.split("-").reverse().join("/")+($("dtSrc").textContent?" ("+$("dtSrc").textContent+")":""):"Informe a data no passo 1";
   $("gen").disabled=!ready;
-  $("s2").classList.toggle("locked",!ok);$("s3").classList.toggle("locked",!ok);
+  $("s2").classList.toggle("locked",!filled.length);$("s3").classList.toggle("locked",!filled.length);
 }
-function refresh(){renderFiles();renderData();renderSide();if(GEN&&FILES.some(f=>f.data))gerar(false);}
+function refresh(){
+  renderFiles();renderData();renderSide();
+  if(GEN){if(BOL.some(b=>catFile(b.k)))gerar(false);else{GEN=false;LAST=null;$("pv").innerHTML='<div class="ph">Clique em “Gerar imagem” no resumo ao lado.</div>';$("dl").disabled=$("cp").disabled=$("dl2").disabled=true;$("outMsg").textContent=""}}
+}
 
-/* ================= imagem (estilo do boletim) ================= */
+/* ================= imagem ================= */
 const MES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 function dateLabel(){const v=$("dt").value;return v?v.split("-")[2]+"/"+MES[+v.split("-")[1]-1]:"—"}
 function pickData(data){
@@ -633,26 +694,17 @@ function pickData(data){
   const top2=f=>{const j=data.journeys.find(f);return j?{title:j.title,items:j.items.filter(i=>i.pct>0).slice(0,2)}:null};
   return{rest,ex:top2(isEx),ca:top2(isCa)};
 }
-function layoutSpec(withCa){
-  const L=[{t:"blank"}];
-  for(let n=0;n<5;n++)L.push({t:"item",s:"rest",n});
-  const secs=[["ex","Experiência do Cliente"]];if(withCa)secs.push(["ca","Cancelamento"]);
-  secs.forEach(([s,def])=>L.push({t:"blank"},{t:"blank"},{t:"sec",s,def},{t:"blank"},{t:"item",s,n:0},{t:"item",s,n:1}));
-  return L;
-}
-function itemAt(d,l){return l.s==="rest"?d.rest[l.n]:(d[l.s]&&d[l.s].items[l.n])}
 function fitText(x,s,w){
   if(x.measureText(s).width<=w)return s;
   while(s.length>1&&x.measureText(s+"…").width>w)s=s.slice(0,-1);
   return s.trimEnd()+"…";
 }
-/* total do quadrado vermelho = interações da extração (Base DDD); sem ela, o total da aba Base */
-function totalOf(f){return f?((f.dd&&(f.dd.inter||f.dd.total))||f.data.total||null):null}
 function rr(x,X,Y,w,h,r){r=Math.min(r,w/2,h/2);x.beginPath();x.moveTo(X+r,Y);x.arcTo(X+w,Y,X+w,Y+h,r);x.arcTo(X+w,Y+h,X,Y+h,r);x.arcTo(X,Y+h,X,Y,r);x.arcTo(X,Y,X+w,Y,r);x.closePath()}
 function gerar(scroll){
   const showD=$("optDDD").checked,withCa=$("optCa").checked;
-  const cols=BOL.map(b=>{const f=fileFor(b.k);return{b,f,d:f?pickData(f.data):null,total:totalOf(f)}});
-  if(!cols.some(c=>c.d))return;
+  /* só entram os boletins que têm arquivo de categorias */
+  const cols=BOL.map(b=>({b,c:CARD(b.k)})).filter(o=>o.c).map(o=>({b:o.b,d:pickData(o.c),total:o.c.total}));
+  if(!cols.length)return;
   const secs=[{k:"rest",t:"Top 5 motivos",n:5}];
   secs.push({k:"ex",t:"Experiência do Cliente",n:2});if(withCa)secs.push({k:"ca",t:"Cancelamento",n:2});
   const itemsOf=(d,k)=>!d?[]:k==="rest"?d.rest:(d[k]?d[k].items:[]);
@@ -663,10 +715,16 @@ function gerar(scroll){
   const segName=SEG==="movel"?"Móvel":"Residencial";
   const FF='Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif';
   const PAD=28,TOPH=84,GAP=18,CW=414,CP=18,IND=30;
-  const rowH=anyD?62:42,CHEAD=78,SECH=36,SECGAP=12,FOOT=46;
+  const rowH=anyD?62:42,CHEAD=78,SECH=36,SECGAP=12;
   const bodyH=secs.reduce((s,sc,i)=>s+(i?SECGAP:0)+SECH+sc.n*rowH,0);
   const cardH=CHEAD+bodyH+14;
-  const W=PAD*2+CW*4+GAP*3,H=TOPH+PAD+cardH+FOOT,K=2;
+  const NC=cols.length,inner=CW*NC+GAP*(NC-1),W=Math.max(PAD*2+inner,820),OX=Math.round((W-inner)/2),K=2;
+  const now=new Date();
+  const footL="% = valor da categoria ÷ interações do boletim  ·  medidor de 0 a 100%"+(anyD?"  ·  DDD: 3 principais por motivo":"");
+  const footR=segName+"  ·  gerado em "+now.toLocaleDateString("pt-BR")+" "+now.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+  const mcx=document.createElement("canvas").getContext("2d");mcx.font="11.5px "+FF;
+  const footTwo=mcx.measureText(footL).width+mcx.measureText(footR).width+40>W-PAD*2;
+  const FOOT=footTwo?62:46,H=TOPH+PAD+cardH+FOOT;
   const c=document.createElement("canvas");c.width=W*K;c.height=H*K;
   const x=c.getContext("2d");x.scale(K,K);
   const T=(s,X,Y,font,color,align)=>{x.font=font;x.fillStyle=color;x.textAlign=align||"left";x.textBaseline="alphabetic";x.fillText(s,X,Y)};
@@ -686,7 +744,7 @@ function gerar(scroll){
 
   /* cards */
   cols.forEach((col,ci)=>{
-    const X=PAD+ci*(CW+GAP),Y=TOPH+PAD*0.75|0;
+    const X=OX+ci*(CW+GAP),Y=TOPH+PAD*0.75|0;
     x.save();x.shadowColor=TH.sh;x.shadowBlur=14;x.shadowOffsetY=3;
     rr(x,X,Y,CW,cardH,12);x.fillStyle="#fff";x.fill();x.restore();
     rr(x,X,Y,CW,cardH,12);x.strokeStyle=BD;x.lineWidth=1;x.stroke();
@@ -755,10 +813,8 @@ function gerar(scroll){
   });
 
   /* rodapé */
-  const fy=H-FOOT/2+4;
-  T("% sobre o report do speech  ·  medidor em escala de 0 a 100%"+(anyD?"  ·  DDD: 3 regiões com mais interações em cada motivo":""),PAD,fy,"11.5px "+FF,MUT);
-  const now=new Date();
-  T(segName+"  ·  gerado em "+now.toLocaleDateString("pt-BR")+" "+now.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),W-PAD,fy,"11.5px "+FF,MUT,"right");
+  if(footTwo){T(footL,W/2,H-FOOT+24,"11.5px "+FF,MUT,"center");T(footR,W/2,H-FOOT+42,"11.5px "+FF,MUT,"center")}
+  else{const fy=H-FOOT/2+4;T(footL,PAD,fy,"11.5px "+FF,MUT);T(footR,W-PAD,fy,"11.5px "+FF,MUT,"right")}
 
   const name="speech-analytics_"+SEG+"_"+dd.replace("/","-")+".png";
   c.toBlob(bl=>{
@@ -769,6 +825,7 @@ function gerar(scroll){
     if(scroll)$("s3").scrollIntoView({behavior:"smooth",block:"start"});
   },"image/png");
 }
+
 function baixar(){if(!LAST)return;const a=document.createElement("a");a.href=URL.createObjectURL(LAST.blob);a.download=LAST.name;document.body.appendChild(a);a.click();a.remove()}
 async function copiar(){
   if(!LAST)return;
@@ -777,23 +834,24 @@ async function copiar(){
 }
 
 /* ================= eventos ================= */
-const d=$("drop");
-d.onclick=()=>$("file").click();
-d.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("file").click()}};
-$("file").onchange=e=>{addFiles(e.target.files);e.target.value=""};
-["dragover","dragenter"].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.add("over")}));
-["dragleave","drop"].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.remove("over")}));
-d.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
+const drop=$("drop");
+drop.onclick=()=>$("file").click();
+drop.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("file").click()}};
+$("file").onchange=e=>{const fs=[...e.target.files];e.target.value="";addFiles(fs)};
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
+drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
 ["dragover","drop"].forEach(ev=>window.addEventListener(ev,e=>e.preventDefault()));
 $("files").addEventListener("change",e=>{
   const row=e.target.closest(".f");if(!row||e.target.tagName!=="SELECT")return;
-  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;f.autoAll=false;ACTIVE=null;refresh()}
+  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;ACTIVE=null;refresh()}
 });
 $("files").addEventListener("click",e=>{
   const row=e.target.closest(".f");if(!row||!e.target.classList.contains("x"))return;
   FILES=FILES.filter(x=>x.id!=row.dataset.id);ACTIVE=null;
   status(FILES.length?FILES.length+" arquivo(s) na lista":"Aguardando arquivos");refresh();
 });
+$("refline").addEventListener("click",e=>{if(e.target.id==="refReset"){resetRef();CACHE.clear();refresh()}});
 $("tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;ACTIVE=t.dataset.k;renderData();renderSide()});
 $("q").oninput=e=>{V.q=e.target.value;renderData()};
 $("zeros").onchange=e=>{V.zeros=e.target.checked;renderData()};
@@ -807,6 +865,7 @@ $("gen").onclick=()=>gerar(true);
 $("dl").onclick=$("dl2").onclick=baixar;
 $("cp").onclick=copiar;
 (()=>{const t=new Date();$("dt").value=t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0")})();
+setSeg("residencial");
 refresh();
 </script>
 </body>
