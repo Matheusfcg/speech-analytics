@@ -297,22 +297,25 @@ function SPEECH_PARSER(XLSX){
   }
   function readCat(G,last,sheet){
     const h=findCatHeader(G,last);if(!h)return null;
-    const {cols}=h,rows=[];let blank=0;
+    /* lê só a primeira tabela: para na primeira linha vazia ou num novo cabeçalho; categoria repetida não soma */
+    const {cols}=h,rows=[],seen=new Set();let dups=0;
     for(let r=h.r+1;r<=last;r++){
       const n=txt(V(G,r,cols.nome));
-      if(!n){if(rows.length&&++blank>=2)break;continue}
-      blank=0;
+      if(!n){if(rows.length)break;continue}
+      if(norm(n)==="nome"||/^categoria$/.test(norm(n))){if(rows.length)break;continue}
+      if(seen.has(norm(n))){dups++;continue}
       const v=cols.val!=null?V(G,r,cols.val):null,p=cols.pct!=null?V(G,r,cols.pct):null;
       const num=x=>typeof x==="number"&&isFinite(x)?x:(typeof x==="string"&&/^\s*-?[\d.,]+\s*%?\s*$/.test(x)?parseFloat(x.includes(",")?x.replace(/\./g,"").replace(",","."):x):null);
       const vv=num(v),pp=num(p);
       if(vv==null&&pp==null)continue;
+      seen.add(norm(n));
       rows.push({n,v:vv,p:pp,l:cols.mot!=null?txt(V(G,r,cols.mot)):"",j:cols.jor!=null?txt(V(G,r,cols.jor)):""});
     }
     if(!rows.length)return null;
     const meta=readMeta(G,h.r-1);
     let total=meta.inter||null,totalSrc=total?"interacoes":null;
     if(!total)for(let r=0;r<Math.min(3,h.r)&&!total;r++)for(const c of rowVals(G,r,10))if(typeof c==="number"&&c>=1&&Number.isInteger(c)){total=c;totalSrc="celula";break}
-    return{sheet,rows,total,totalSrc,meta};
+    return{sheet,rows,total,totalSrc,meta,dups,headerRow:h.r+1};
   }
   /* dados de interação (DDD): cabeçalho com Nº / ANI / MSISDN e uma coluna por categoria */
   function readDDD(G,last,sheet,valid){
@@ -576,7 +579,7 @@ function buildCard(cf,df,k){
     const rank={};for(let i=0;i<D.n;i++){const c=D.codes[i];if(c)rank[D.dl[c-1]]=(rank[D.dl[c-1]]||0)+1}
     dd={file:df.name,sheet:D.sheet,n:D.n,inter:D.meta.inter||D.n,idn:D.idn,rank,ok,miss};
   }
-  return{mode:isRet?"ret":"padrao",total,totalSrc,catTotal:cat.total,dddFile:df?df.name:null,catFile:cf.name,catSheet:cat.sheet,journeys,mapped,unm:unm.sort((a,b)=>(b.v||0)-(a.v||0)),nRows:cat.rows.length,dd,date:cat.meta.ini||null};
+  return{mode:isRet?"ret":"padrao",dups:cat.dups||0,total,totalSrc,catTotal:cat.total,dddFile:df?df.name:null,catFile:cf.name,catSheet:cat.sheet,journeys,mapped,unm:unm.sort((a,b)=>(b.v||0)-(a.v||0)),nRows:cat.rows.length,dd,date:cat.meta.ini||null};
 }
 function status(t,err){const s=$("status");s.textContent=t;s.className=err?"err":""}
 async function addFiles(list){
@@ -654,6 +657,9 @@ function renderData(){
   const warn=[];
   if(!d.total)warn.push("Não achei o total de “Interações” nem no arquivo de DDD nem no de categorias: os percentuais ficaram sem base.");
   else if(d.totalSrc!=="ddd")warn.push(`Este boletim está sem arquivo de DDD: o % foi calculado sobre as interações do arquivo de categorias (${fint(d.total)}). Carregue o arquivo _DDD para usar o total certo.`);
+  const over=all.filter(i=>i.pct>100);
+  if(over.length)warn.push(`${over.length} motivo(s) passam de 100% (${over.slice(0,3).map(i=>i.label+" "+fmt(i.pct)).join(", ")}): o valor no arquivo de categorias é maior que as ${fint(d.total)} interações do arquivo de DDD. Confira se os dois arquivos são do mesmo período e filtro.`);
+  if(d.dups)warn.push(`${d.dups} linha(s) repetidas de categoria no arquivo de categorias foram ignoradas (vale a primeira).`);
   if(d.dd&&d.dd.miss)warn.push(`${d.dd.miss} motivo(s) não aparecem como coluna no arquivo de DDD.`);
   $("val").innerHTML=(warn.length?`<div class="wbox">${warn.map(esc).join("<br>")}</div>`:"")+
     (d.unm.length?`<details class="unm"><summary>${d.unm.length} categoria(s) com valor ${d.mode==="ret"?"fora da aba “Retenção - Base utilizada” (não contam no card de Retenção)":"e sem nomenclatura no DePara "+(SEG==="movel"?"Móvel":"HFC")+" (ficam fora dos cards)"}</summary><div>${d.unm.slice(0,60).map(r=>`<span>${esc(r.n)} <b>${r.v!=null?fint(r.v):fmt(r.p)}</b></span>`).join("")}${d.unm.length>60?`<span>+ ${d.unm.length-60}</span>`:""}</div></details>`:"");
