@@ -186,7 +186,7 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
         <div id="status">Aguardando arquivos</div>
         <div id="files"></div>
         <div class="row2">
-          <label>Data de referência <input type="date" id="dt"></label><em id="dtSrc"></em>
+          <label>Data de referência <input type="date" id="dt"></label><label>Horário <input type="text" id="hr" maxlength="14" placeholder="ex.: 12h" style="width:110px"></label><em id="dtSrc"></em>
         </div>
         <div id="refline"></div>
       </div>
@@ -597,6 +597,7 @@ async function addFiles(list){
   }));
   autoAssign();ACTIVE=null;
   if(!SEG_TOUCHED){const ss=FILES.map(detectSeg).filter(Boolean);if(ss.length){const m=ss.filter(s=>s==="movel").length;setSeg(m>ss.length-m?"movel":"residencial")}}
+  if(!HR_TOUCHED){const hh=detectHora();if(hh)$("hr").value=hh}
   if(!DATE_TOUCHED){
     const ds=FILES.filter(f=>f.r&&f.r.cat).map(f=>f.r.cat.meta.ini||f.r.meta.ini).filter(Boolean);
     if(ds.length){const c={};ds.forEach(d=>c[d]=(c[d]||0)+1);$("dt").value=Object.keys(c).sort((a,b)=>c[b]-c[a])[0];$("dtSrc").textContent="lida do arquivo"}
@@ -604,6 +605,14 @@ async function addFiles(list){
   const bad=FILES.filter(f=>f.err).length;
   status(FILES.length+" arquivo(s) na lista · lidos em "+((performance.now()-t0)/1000).toFixed(1).replace(".",",")+" s"+(bad?" · "+bad+" com problema":""),!!bad&&bad===FILES.length);
   refresh();
+}
+const hrTxt=()=>($("hr").value||"").trim();
+/* horário do relatório: "CM_N1_24.11_12H" → 12h; senão a hora de término da extração */
+function detectHora(){
+  for(const f of FILES.filter(f=>f.r&&(f.r.cat||f.r.ddd))){
+    for(const s of [f.name,f.r.meta.title||""]){const m=String(s).replace(/\.(xlsx|xlsm|xls|csv)$/i,"").match(/(?:^|[\s_\-.])(\d{1,2})\s*h(?:s|rs)?(?=$|[\s_\-.])/i);if(m&&+m[1]<=24)return(+m[1])+"h"}
+  }
+  return"";
 }
 function setSeg(s,manual){
   if(manual)SEG_TOUCHED=true;SEG=s;
@@ -692,7 +701,7 @@ function renderSide(){
   $("c4").className="ci"+(filled.length&&!woD.length?" ok":"");
   $("c4s").textContent=!filled.length?"Carregue os arquivos no passo 1":!wD.length?"Nenhum arquivo de DDD · a imagem sai sem DDD":
     (woD.length?"Com DDD: "+wD.map(b=>b.tab).join(", ")+" · sem DDD: "+woD.map(b=>b.tab).join(", "):"Todos os boletins com DDD");
-  $("c3").className="ci"+(hasDate?" ok":"");$("c3s").textContent=hasDate?$("dt").value.split("-").reverse().join("/")+($("dtSrc").textContent?" ("+$("dtSrc").textContent+")":""):"Informe a data no passo 1";
+  $("c3").className="ci"+(hasDate?" ok":"");$("c3s").textContent=hasDate?$("dt").value.split("-").reverse().join("/")+(hrTxt()?" · "+hrTxt():"")+($("dtSrc").textContent?" ("+$("dtSrc").textContent+")":""):"Informe a data no passo 1";
   $("gen").disabled=!ready;
   $("s2").classList.toggle("locked",!filled.length);$("s3").classList.toggle("locked",!filled.length);
 }
@@ -757,7 +766,7 @@ function gerar(scroll){
   logo(".logo.claro",32);
   const dLong=dv?(+dv.split("-")[2])+" de "+["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"][+dv.split("-")[1]-1]+" de "+dv.split("-")[0]:"";
   T("Boletins de speech",W/2,TOPH/2-1,"700 22px "+FF,"#fff","center");
-  T(segName+(dLong?"  ·  "+dLong:""),W/2,TOPH/2+19,"13px "+FF,"rgba(255,255,255,.85)","center");
+  T(segName+(dLong?"  ·  "+dLong:"")+(hrTxt()?"  ·  "+hrTxt():""),W/2,TOPH/2+19,"13px "+FF,"rgba(255,255,255,.85)","center");
 
   /* cards */
   cols.forEach((col,ci)=>{
@@ -768,9 +777,10 @@ function gerar(scroll){
     rr(x,X,Y,CW,cardH,12);x.strokeStyle=BD;x.lineWidth=1;x.stroke();
     x.save();rr(x,X,Y,CW,cardH,12);x.clip();x.fillStyle=col.d?RED:"#d1d5db";x.fillRect(X,Y,CW,4);x.restore();
     /* cabeçalho: título + selo vermelho com data e interações */
-    const bw=104,bh=50,bx=X+CW-CP-bw,by=Y+16;
+    const ddH=dd+(hrTxt()?" · "+hrTxt():"");x.font="700 15px "+FF;
+    const bw=Math.min(190,Math.max(104,Math.ceil(x.measureText(ddH).width)+24)),bh=50,bx=X+CW-CP-bw,by=Y+16;
     rr(x,bx,by,bw,bh,8);x.fillStyle=col.d?RED:"#d1d5db";x.fill();
-    T(dd,bx+bw/2,by+21,"700 15px "+FF,"#fff","center");
+    x.font="700 15px "+FF;T(fitText(x,ddH,bw-12),bx+bw/2,by+21,"700 15px "+FF,"#fff","center");
     T(col.total?fint(col.total)+" interações":"—",bx+bw/2,by+39,"500 11.5px "+FF,"rgba(255,255,255,.9)","center");
     x.font="800 16px "+FF;
     T(fitText(x,col.b.t,CW-CP*2-bw-10),X+CP,Y+38,"800 16px "+FF,col.d?RED:"#9ca3af");
@@ -834,7 +844,7 @@ function gerar(scroll){
   if(footTwo){T(footL,W/2,H-FOOT+24,"11.5px "+FF,MUT,"center");T(footR,W/2,H-FOOT+42,"11.5px "+FF,MUT,"center")}
   else{const fy=H-FOOT/2+4;T(footL,PAD,fy,"11.5px "+FF,MUT);T(footR,W-PAD,fy,"11.5px "+FF,MUT,"right")}
 
-  const name="speech-analytics_"+SEG+"_"+dd.replace("/","-")+".png";
+  const name="speech-analytics_"+SEG+"_"+dd.replace("/","-")+(hrTxt()?"_"+hrTxt().replace(/[^\w]+/g,""):"")+".png";
   c.toBlob(bl=>{
     LAST={blob:bl,name};GEN=true;
     $("pv").innerHTML='<img alt="Imagem dos boletins gerada">';$("pv").firstChild.src=URL.createObjectURL(bl);
@@ -859,32 +869,4 @@ $("file").onchange=e=>{const fs=[...e.target.files];e.target.value="";addFiles(f
 ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
 drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
-["dragover","drop"].forEach(ev=>window.addEventListener(ev,e=>e.preventDefault()));
-$("files").addEventListener("change",e=>{
-  const row=e.target.closest(".f");if(!row||e.target.tagName!=="SELECT")return;
-  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;ACTIVE=null;refresh()}
-});
-$("files").addEventListener("click",e=>{
-  const row=e.target.closest(".f");if(!row||!e.target.classList.contains("x"))return;
-  FILES=FILES.filter(x=>x.id!=row.dataset.id);ACTIVE=null;
-  status(FILES.length?FILES.length+" arquivo(s) na lista":"Aguardando arquivos");refresh();
-});
-$("refline").addEventListener("click",e=>{if(e.target.id==="refReset"){resetRef();CACHE.clear();refresh()}});
-$("tabs").addEventListener("click",e=>{const t=e.target.closest(".tab");if(!t)return;ACTIVE=t.dataset.k;renderData();renderSide()});
-$("q").oninput=e=>{V.q=e.target.value;renderData()};
-$("zeros").onchange=e=>{V.zeros=e.target.checked;renderData()};
-$("all").onclick=()=>{V.all=!V.all;$("all").textContent=V.all?"Ver só os principais":"Ver todos os motivos";renderData()};
-$("dt").oninput=()=>{DATE_TOUCHED=true;$("dtSrc").textContent=""};
-$("dt").onchange=refresh;
-$("optDDD").onchange=$("optCa").onchange=()=>{if(GEN)gerar(false)};
-$("segR").onchange=()=>{setSeg("residencial",true);refresh()};
-$("segM").onchange=()=>{setSeg("movel",true);refresh()};
-$("gen").onclick=()=>gerar(true);
-$("dl").onclick=$("dl2").onclick=baixar;
-$("cp").onclick=copiar;
-(()=>{const t=new Date();$("dt").value=t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0")})();
-setSeg("residencial");
-refresh();
-</script>
-</body>
-</html>
+["drago
