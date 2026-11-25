@@ -527,15 +527,23 @@ const BOL=[
   {k:"massivo",t:"BOLETIM N1 MASSIVO",tab:"N1 Massivo",re:/massiv/},
   {k:"cm",     t:"BOLETIM CM N1",     tab:"CM N1",     re:/\bcm\b|combo/},
   {k:"crc",    t:"BOLETIM CRC",       tab:"CRC",       re:/\bcrc\b/},
-  {k:"ret",    t:"RETENÇÃO",          tab:"Retenção",  re:/reten/}
+  {k:"ret",    t:"RETENÇÃO",          tab:"Retenção",  re:/reten/},
+  {k:"ouv",    t:"OUVIDORIA",         tab:"Ouvidoria", re:/ouvid/,multi:true}
 ];
+const NB=BOL.length;
 let FILES=[],NEXT=1,ACTIVE=null,LAST=null,GEN=false,DATE_TOUCHED=false,SEG="residencial",SEG_TOUCHED=false;
 const V={q:"",all:false,zeros:false};
 const kindOf=f=>!f.r?"erro":f.r.cat&&f.r.ddd?"ambos":f.r.cat?"cat":f.r.ddd?"ddd":f.r.ref?"ref":"erro";
 const keyStr=s=>norm(s).replace(/\.(xlsx|xlsm|xls|csv)$/,"").replace(/[_\-.()]+/g," ");
 const stem=f=>keyStr(f.name).replace(/\bddd\b/g,"").replace(/\s+/g," ").trim();
+/* parte do arquivo no Móvel: Pré ou Pós e Controle (só a Ouvidoria tem essa divisão) */
+function partOf(f){const s=keyStr(f.name+" "+(f.r&&f.r.meta.title||""));return/\bpos\b|controle/.test(s)?"Pós e Controle":/\bpre\b/.test(s)?"Pré":null}
 function detectKey(f){
-  for(const s of [keyStr(f.name),keyStr(f.r&&f.r.meta.title||"")]){const b=BOL.find(b=>b.re.test(s));if(b)return b.k}
+  /* o nome do arquivo manda; o título do relatório do Verint é o plano B */
+  for(const s of [keyStr(f.name),keyStr(f.r&&f.r.meta.title||"")]){
+    const b=BOL.find(b=>b.re.test(s));if(b)return b.k;
+    if(/\bpos\b|controle|\bpre\b/.test(s))return"ouv";
+  }
   return null;
 }
 function detectSeg(f){
@@ -543,9 +551,10 @@ function detectSeg(f){
   const m=/movel|pos pago|pre pago|controle/.test(s),r=/residencial|hfc|fibra|combo|massivo/.test(s);
   return m&&!r?"movel":r&&!m?"residencial":null;
 }
+const isMulti=k=>{const b=BOL.find(b=>b.k===k);return!!(b&&b.multi)};
 function autoAssign(){
   const data=FILES.filter(f=>["cat","ddd","ambos"].includes(kindOf(f)));
-  /* 1) pelo nome do arquivo ou pelo título do relatório */
+  /* 1) pelo nome do arquivo ou pelo título do relatório (Pré / Pós e Controle → Ouvidoria) */
   data.filter(f=>f.assign==null).forEach(f=>{const k=detectKey(f);if(k)f.assign=k});
   /* 2) arquivo de DDD acompanha o de categorias com o mesmo nome (ex.: CM_N1_24.11_12H e CM_N1_24.11_12H_DDD) */
   data.filter(f=>f.assign==null&&kindOf(f)==="ddd").forEach(f=>{
@@ -553,31 +562,47 @@ function autoAssign(){
   /* 3) o que sobrar ocupa o primeiro boletim livre para aquele tipo */
   data.filter(f=>f.assign==null).forEach(f=>{
     const isD=kindOf(f)==="ddd",isC=kindOf(f)!=="ddd";
-    const free=BOL.find(b=>!data.some(o=>o!==f&&o.assign===b.k&&((isC&&kindOf(o)!=="ddd")||(isD&&kindOf(o)!=="cat"))));
+    const free=BOL.find(b=>!b.multi&&!data.some(o=>o!==f&&o.assign===b.k&&((isC&&kindOf(o)!=="ddd")||(isD&&kindOf(o)!=="cat"))));
     f.assign=free?free.k:"skip";
   });
   FILES.filter(f=>!["cat","ddd","ambos"].includes(kindOf(f))).forEach(f=>f.assign="skip");
 }
-const catFile=k=>FILES.filter(f=>f.assign===k&&(kindOf(f)==="cat"||kindOf(f)==="ambos")).pop()||null;
-const dddFile=k=>FILES.filter(f=>f.assign===k&&kindOf(f)==="ddd").pop()||FILES.filter(f=>f.assign===k&&kindOf(f)==="ambos").pop()||null;
+/* boletins comuns: vale o último arquivo de cada tipo; Ouvidoria junta todos (Pré + Pós e Controle) */
+function catFiles(k){const l=FILES.filter(f=>f.assign===k&&(kindOf(f)==="cat"||kindOf(f)==="ambos"));return isMulti(k)?l:l.slice(-1)}
+function dddFiles(k){
+  const l=FILES.filter(f=>f.assign===k&&kindOf(f)==="ddd"),a=FILES.filter(f=>f.assign===k&&kindOf(f)==="ambos");
+  if(isMulti(k))return l.concat(a);return l.length?l.slice(-1):a.slice(-1);
+}
+const catFile=k=>catFiles(k)[0]||null;
 
 const CACHE=new Map();
 function CARD(k){
-  const cf=catFile(k);if(!cf)return null;
-  const df=dddFile(k),key=[cf.id,df?df.id:0,SEG,REFV].join("|");
+  const cfs=catFiles(k);if(!cfs.length)return null;
+  const dfs=dddFiles(k),key=[cfs.map(f=>f.id).join(","),dfs.map(f=>f.id).join(","),SEG,REFV].join("|");
   if(CACHE.has(k)&&CACHE.get(k).key===key)return CACHE.get(k).card;
-  const card=buildCard(cf,df,k);CACHE.set(k,{key,card});return card;
+  const card=buildCard(cfs,dfs,k);CACHE.set(k,{key,card});return card;
 }
-function buildCard(cf,df,k){
+function buildCard(cfs,dfs,k){
   /* Retenção conta só as categorias da aba "Retenção - Base utilizada"; os demais boletins usam o DePara do segmento */
   const isRet=k==="ret"&&REF.ret.size>0;
-  const cat=cf.r.cat,dp=isRet?REF.ret:SEG==="movel"?REF.movel:REF.hfc;
-  /* total do card = interações do arquivo de DDD (Dados de Interação); sem ele, as interações do arquivo de categorias */
-  const D0=df&&df.r.ddd,total=D0?(D0.meta.inter||D0.n):cat.total,totalSrc=D0?"ddd":(cat.total?"categorias":null);
-  const ps=cat.rows.map(r=>r.p).filter(x=>x!=null),frac=ps.length>0&&Math.max(...ps)<=1.0001;
+  const dp=isRet?REF.ret:SEG==="movel"?REF.movel:REF.hfc;
+  /* várias planilhas de categorias (Ouvidoria Pré + Pós): soma o valor de cada categoria */
+  const merged=new Map();let dups=0,catTotal=0,catHasTotal=true;
+  for(const cf of cfs){
+    const c=cf.r.cat;dups+=c.dups||0;if(c.total)catTotal+=c.total;else catHasTotal=false;
+    for(const row of c.rows){const key=norm(row.n),o=merged.get(key);
+      if(!o)merged.set(key,{...row});
+      else{if(row.v!=null)o.v=(o.v||0)+row.v;if(row.p!=null)o.p=(o.p||0)+row.p}}
+  }
+  const rows=[...merged.values()];
+  /* total do card = interações dos arquivos de DDD (somadas); sem eles, as interações dos arquivos de categorias */
+  const Ds=dfs.map(f=>f.r.ddd).filter(Boolean);
+  const dddTotal=Ds.reduce((s,D)=>s+(D.meta.inter||D.n),0);
+  const total=Ds.length?dddTotal:(catHasTotal&&catTotal?catTotal:null),totalSrc=Ds.length?"ddd":(total?"categorias":null);
+  const ps=rows.map(r=>r.p).filter(x=>x!=null),frac=ps.length>0&&Math.max(...ps)<=1.0001;
   const by={},unm=[];let mapped=0;
-  for(const row of cat.rows){
-    const k=norm(row.n);let m=dp.get(k);
+  for(const row of rows){
+    const nk=norm(row.n);let m=dp.get(nk);
     if(!m&&!isRet&&row.l&&row.j)m={l:row.l,j:row.j};               /* nomenclatura que já vem no próprio arquivo */
     if(!m){if((row.v||0)>0||(row.p||0)>0)unm.push(row);continue}
     let pct=null;
@@ -592,22 +617,31 @@ function buildCard(cf,df,k){
   const journeys=Object.keys(by).map(t=>({title:t,items:[...by[t].values()].sort((a,b)=>b.pct-a.pct)}))
     .sort((a,b)=>b.items[0].pct-a.items[0].pct);
   let dd=null;
-  if(df&&df.r.ddd){
-    const D=df.r.ddd,mark=new Uint8Array(D.n);
-    let ok=0,miss=0;
+  if(Ds.length){
+    /* DDD: conta em cada arquivo e soma por DDD */
+    const marks=Ds.map(D=>new Uint8Array(D.n));let ok=0,miss=0;
     for(const j of journeys)for(const it of j.items){
-      const lists=[...new Set(it.nomes.map(norm))].map(n=>D.cols[n]).filter(Boolean);
-      if(!lists.length){it.ddd=null;miss++;continue}
-      mark.fill(0);const cnt={};let n=0,ni=0;
-      for(const L of lists)for(let i=0;i<L.length;i++){const r=L[i];if(mark[r])continue;mark[r]=1;const c=D.codes[r];if(c){cnt[c]=(cnt[c]||0)+1;n++}else ni++}
-      const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||D.dl[a-1].localeCompare(D.dl[b-1])).slice(0,3)
-        .map(c=>({d:D.dl[c-1],uf:REF.uf[D.dl[c-1]]||"",q:cnt[c],p:cnt[c]/n*100}));
+      const names=[...new Set(it.nomes.map(norm))];const cnt={};let n=0,ni=0,found=false;
+      Ds.forEach((D,di)=>{
+        const lists=names.map(nm=>D.cols[nm]).filter(Boolean);if(!lists.length)return;found=true;
+        const mark=marks[di];mark.fill(0);
+        for(const L of lists)for(let i=0;i<L.length;i++){const r=L[i];if(mark[r])continue;mark[r]=1;const c=D.codes[r];if(c){const d=D.dl[c-1];cnt[d]=(cnt[d]||0)+1;n++}else ni++}
+      });
+      if(!found){it.ddd=null;miss++;continue}
+      const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||a.localeCompare(b)).slice(0,3)
+        .map(d=>({d,uf:REF.uf[d]||"",q:cnt[d],p:cnt[d]/n*100}));
       it.ddd={n,ni,top};ok++;
     }
-    const rank={};for(let i=0;i<D.n;i++){const c=D.codes[i];if(c)rank[D.dl[c-1]]=(rank[D.dl[c-1]]||0)+1}
-    dd={file:df.name,sheet:D.sheet,n:D.n,inter:D.meta.inter||D.n,idn:D.idn,rank,ok,miss};
+    const rank={};let n=0,idn=0;
+    for(const D of Ds){n+=D.n;idn+=D.idn;for(let i=0;i<D.n;i++){const c=D.codes[i];if(c)rank[D.dl[c-1]]=(rank[D.dl[c-1]]||0)+1}}
+    dd={file:dfs.map(f=>f.name).join(" + "),sheet:Ds.map(D=>D.sheet).join(" + "),n,inter:dddTotal,idn,rank,ok,miss};
   }
-  return{mode:isRet?"ret":"padrao",dups:cat.dups||0,total,totalSrc,catTotal:cat.total,dddFile:df?df.name:null,catFile:cf.name,catSheet:cat.sheet,journeys,mapped,unm:unm.sort((a,b)=>(b.v||0)-(a.v||0)),nRows:cat.rows.length,dd,date:cat.meta.ini||null};
+  const parts=[...new Set(cfs.map(partOf).filter(Boolean))];
+  const warnFiles=isMulti(k)&&SEG==="movel"&&(cfs.length!==dfs.length||cfs.length<2)?
+    `Ouvidoria Móvel com ${cfs.length} arquivo(s) de categorias e ${dfs.length} de DDD. O esperado são 4: categorias Pré, categorias Pós e Controle, DDD Pré e DDD Pós e Controle.`:null;
+  return{mode:isRet?"ret":"padrao",dups,total,totalSrc,catTotal:catHasTotal?catTotal:null,dddFile:dfs.length?dfs.map(f=>f.name).join(" + "):null,
+    catFile:cfs.map(f=>f.name).join(" + "),catSheet:cfs.map(f=>f.r.cat.sheet).join(" + "),journeys,mapped,unm:unm.sort((a,b)=>(b.v||0)-(a.v||0)),
+    nRows:rows.length,dd,parts,warnFiles,date:cfs[0].r.cat.meta.ini||null};
 }
 function status(t,err){const s=$("status");s.textContent=t;s.className=err?"err":""}
 async function addFiles(list){
@@ -658,7 +692,7 @@ function barRow(i,k,max){
 const KIND_TXT={cat:"Categorias",ddd:"DDD",ambos:"Categorias + DDD",ref:"Base DePara"};
 function fileInfo(f){
   if(f.err)return esc(f.err);
-  const r=f.r,k=kindOf(f),p=[`<span class="kt">${KIND_TXT[k]}</span>`];
+  const r=f.r,k=kindOf(f),pt=f.assign==="ouv"?partOf(f):null,p=[`<span class="kt">${KIND_TXT[k]}${pt?" · "+pt:""}</span>`];
   if(r.cat)p.push(`aba ${esc(r.cat.sheet)} · ${fint(r.cat.rows.length)} categorias · `+(r.cat.total?`<b>${fint(r.cat.total)} interações</b>`:`<span class="warn">sem total de interações</span>`));
   if(r.ddd)p.push(`${k==="ambos"?"DDD na aba "+esc(r.ddd.sheet)+" · ":""}${fint(r.ddd.n)} interações · ${fint(r.ddd.idn)} com DDD`);
   if(r.ref)p.push(`${r.ref.h?r.ref.h.length+" HFC":""}${r.ref.m?" · "+r.ref.m.length+" Móvel":""}${r.ref.r?" · "+r.ref.r.length+" Retenção":""}${r.ref.d?" · "+r.ref.d.length+" DDDs":""} · aplicada e salva neste navegador`);
@@ -696,6 +730,7 @@ function renderData(){
   else if(d.totalSrc!=="ddd")warn.push(`Este boletim está sem arquivo de DDD: o % foi calculado sobre as interações do arquivo de categorias (${fint(d.total)}). Carregue o arquivo _DDD para usar o total certo.`);
   const over=all.filter(i=>i.pct>100);
   if(over.length)warn.push(`${over.length} motivo(s) passam de 100% (${over.slice(0,3).map(i=>i.label+" "+fmt(i.pct)).join(", ")}): o valor no arquivo de categorias é maior que as ${fint(d.total)} interações do arquivo de DDD. Confira se os dois arquivos são do mesmo período e filtro.`);
+  if(d.warnFiles)warn.push(d.warnFiles);
   if(d.dups)warn.push(`${d.dups} linha(s) repetidas de categoria no arquivo de categorias foram ignoradas (vale a primeira).`);
   if(d.dd&&d.dd.miss)warn.push(`${d.dd.miss} motivo(s) não aparecem como coluna no arquivo de DDD.`);
   $("val").innerHTML=(warn.length?`<div class="wbox">${warn.map(esc).join("<br>")}</div>`:"")+
@@ -715,11 +750,11 @@ function renderSide(){
   const hasDate=!!$("dt").value,ready=filled.length>0&&hasDate;
   const act=ACTIVE?CARD(ACTIVE):null;
   $("n1").textContent=ok;$("n1").className=ok?"on":"";
-  $("n2").textContent=filled.length+"/4";$("n2").className=filled.length?"on":"";
+  $("n2").textContent=filled.length+"/"+NB;$("n2").className=filled.length?"on":"";
   $("n3").textContent=act&&act.total?fint(act.total):"—";$("n3").className=act&&act.total?"on":"";
   $("sT").textContent=filled.length?(filled.length===1?"1 card na imagem":filled.length+" cards na imagem"):"Nenhum arquivo carregado";
   $("sT").className=filled.length?"on":"";
-  $("sS").textContent=filled.length?(missing.length?"Fora da imagem (sem arquivo): "+missing.join(", "):"Os 4 boletins entram na imagem"):"Carregue os arquivos no passo 1";
+  $("sS").textContent=filled.length?(missing.length?"Fora da imagem (sem arquivo): "+missing.join(", "):"Todos os boletins entram na imagem"):"Carregue os arquivos no passo 1";
   $("pill").textContent=ready?"Pronto":"Em preenchimento";$("pill").className="pill"+(ready?" ok":"");
   $("c1").className="ci"+(ok?" ok":"");$("c1s").textContent=ok?ok+" arquivo(s) lido(s) com sucesso":"Carregue os arquivos no passo 1";
   const noTot=filled.filter(b=>!CARD(b.k).total);
@@ -757,7 +792,7 @@ function rr(x,X,Y,w,h,r){r=Math.min(r,w/2,h/2);x.beginPath();x.moveTo(X+r,Y);x.a
 function gerar(scroll){
   const showD=$("optDDD").checked,withCa=$("optCa").checked;
   /* só entram os boletins que têm arquivo de categorias */
-  const cols=BOL.map(b=>({b,c:CARD(b.k)})).filter(o=>o.c).map(o=>({b:o.b,d:pickData(o.c),total:o.c.total}));
+  const cols=BOL.map(b=>({b,c:CARD(b.k)})).filter(o=>o.c).map(o=>({b:o.b,d:pickData(o.c),total:o.c.total,parts:o.c.parts}));
   if(!cols.length)return;
   const SECS=[{k:"rest",t:"Top 5 motivos",n:5},{k:"ex",t:"Experiência do Cliente",n:2}];if(withCa)SECS.push({k:"ca",t:"Cancelamento",n:2});
   cols.forEach(c=>{c.secs=c.d.ret?[{k:"rest",t:"Top 5 motivos de retenção",n:5}]:SECS});
@@ -821,7 +856,7 @@ function gerar(scroll){
     T(col.total?fint(col.total)+" interações":"—",bx+bw/2,by+39,"500 11.5px "+FF,"rgba(255,255,255,.9)","center");
     x.font="800 16px "+FF;
     T(fitText(x,col.b.t,CW-CP*2-bw-10),X+CP,Y+38,"800 16px "+FF,col.d?RED:"#9ca3af");
-    T(col.d?"Top motivos do dia":"Sem arquivo carregado",X+CP,Y+57,"12px "+FF,MUT);
+    T(col.d?"Top motivos do dia"+(col.parts&&col.parts.length?" · "+col.parts.join(" + "):""):"Sem arquivo carregado",X+CP,Y+57,"12px "+FF,MUT);
     x.fillStyle=BD;x.fillRect(X+CP,Y+CHEAD,CW-CP*2,1);
     let y=Y+CHEAD;
     if(!col.d){
