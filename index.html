@@ -127,6 +127,10 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
 .fi small b{color:var(--tx)}
 .warn{color:var(--red);font-weight:600}
 #hr{width:110px}
+#cardmap{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+#cardmap .cs{font-size:12px;border:1px solid var(--bd);border-radius:8px;padding:5px 9px;color:var(--mut);background:var(--soft)}
+#cardmap .cs.ok{border-color:#e6b3b3;background:var(--red-l);color:var(--tx)}
+#cardmap .cs b{color:var(--red);margin-right:4px}
 #refline{margin-top:10px;font-size:12px;color:var(--mut)}
 #refline b{color:var(--tx);font-weight:600}
 .lnk{border:0;background:none;color:var(--red);text-decoration:underline;padding:0;font-size:12px}
@@ -214,6 +218,7 @@ select,input[type=date],input[type=text]{font:inherit;font-size:13px;border:1px 
         <div class="row2">
           <label>Data de referência <input type="date" id="dt"></label><label>Horário <input type="text" id="hr" maxlength="14" placeholder="ex.: 12h"></label><em id="dtSrc"></em>
         </div>
+        <div id="cardmap"></div>
         <div id="refline"></div>
       </div>
     </section>
@@ -523,14 +528,19 @@ async function parseFile(f){
 }
 
 /* ================= boletins, arquivos e cálculo ================= */
-const BOL=[
-  {k:"massivo",t:"BOLETIM N1 MASSIVO",tab:"N1 Massivo",re:/massiv/},
-  {k:"cm",     t:"BOLETIM CM N1",     tab:"CM N1",     re:/\bcm\b|combo/},
-  {k:"crc",    t:"BOLETIM CRC",       tab:"CRC",       re:/\bcrc\b/},
-  {k:"ret",    t:"RETENÇÃO",          tab:"Retenção",  re:/reten/},
-  {k:"ouv",    t:"OUVIDORIA",         tab:"Ouvidoria", re:/ouvid/,multi:true}
+/* cards por segmento: r = Residencial, m = Móvel (só entra na imagem o card que tiver arquivo) */
+const ALLBOL=[
+  {k:"massivo",seg:"r", t:"BOLETIM N1 MASSIVO",tab:"N1 Massivo",re:/massiv|\bmass\b|\bmsv\b/},
+  {k:"cm",     seg:"r", t:"BOLETIM CM N1",     tab:"CM N1",     re:/\bcm\b|combo/},
+  {k:"crc",    seg:"r", t:"BOLETIM CRC",       tab:"CRC",       re:/\bcrc\b/},
+  {k:"crcm",   seg:"m", t:"BOLETIM CRC MÓVEL", tab:"CRC Móvel", re:/\bcrc\b/},
+  {k:"pre",    seg:"m", t:"PRÉ-PAGO",          tab:"Pré-pago",  re:/pre ?pago|\bpre\b/},
+  {k:"pos",    seg:"m", t:"PÓS-PAGO",          tab:"Pós-pago",  re:/pos ?pago|\bpos\b/},
+  {k:"ctrl",   seg:"m", t:"CONTROLE",          tab:"Controle",  re:/controle|\bctrl\b/},
+  {k:"ret",    seg:"rm",t:"RETENÇÃO",          tab:"Retenção",  re:/reten|\bret\b/},
+  {k:"ouv",    seg:"rm",t:"OUVIDORIA",         tab:"Ouvidoria", re:/ouvid|\bouv\b/,multi:true}
 ];
-const NB=BOL.length;
+let BOL=ALLBOL.filter(b=>b.seg.includes("r"));
 let FILES=[],NEXT=1,ACTIVE=null,LAST=null,GEN=false,DATE_TOUCHED=false,SEG="residencial",SEG_TOUCHED=false;
 const V={q:"",all:false,zeros:false};
 const kindOf=f=>!f.r?"erro":f.r.cat&&f.r.ddd?"ambos":f.r.cat?"cat":f.r.ddd?"ddd":f.r.ref?"ref":"erro";
@@ -538,34 +548,47 @@ const keyStr=s=>norm(s).replace(/\.(xlsx|xlsm|xls|csv)$/,"").replace(/[_\-.()]+/
 const stem=f=>keyStr(f.name).replace(/\bddd\b/g,"").replace(/\s+/g," ").trim();
 /* parte do arquivo no Móvel: Pré ou Pós e Controle (só a Ouvidoria tem essa divisão) */
 function partOf(f){const s=keyStr(f.name+" "+(f.r&&f.r.meta.title||""));return/\bpos\b|controle/.test(s)?"Pós e Controle":/\bpre\b/.test(s)?"Pré":null}
-function detectKey(f){
-  /* o nome do arquivo manda; o título do relatório do Verint é o plano B */
-  for(const s of [keyStr(f.name),keyStr(f.r&&f.r.meta.title||"")]){
-    const b=BOL.find(b=>b.re.test(s));if(b)return b.k;
-    if(/\bpos\b|controle|\bpre\b/.test(s))return"ouv";
-  }
-  return null;
-}
+/* Ouvidoria: "Ouvidoria"/"OUV" no nome ou no título; no Móvel, "Pós e Controle" juntos também (os cards Pós-pago e Controle são separados) */
+const isOuv=s=>/ouvid|\bouv\b/.test(s)||(SEG==="movel"&&((/\bpos\b/.test(s)&&/controle/.test(s))||(/\bpre\b/.test(s)&&!/pago/.test(s))));
+function keyIn(s){if(isOuv(s))return"ouv";const b=BOL.find(b=>!b.multi&&b.re.test(s));return b?b.k:null}
+const keyByName=f=>{const n=keyStr(f.name),t=keyStr(f.r&&f.r.meta.title||"");return isOuv(n)||isOuv(t)?"ouv":keyIn(n)};
+const keyByTitle=f=>keyIn(keyStr(f.r&&f.r.meta.title||""));
+function detectKey(f){return keyByName(f)||keyByTitle(f)}
 function detectSeg(f){
-  const s=norm([f.name,f.r&&f.r.meta.proj,f.r&&f.r.meta.title].join(" "));
-  const m=/movel|pos pago|pre pago|controle/.test(s),r=/residencial|hfc|fibra|combo|massivo/.test(s);
+  const s=keyStr([f.name,f.r&&f.r.meta.proj,f.r&&f.r.meta.title].join(" "));
+  const m=/movel|\bpos\b|\bpre\b|controle/.test(s),r=/residencial|hfc|fibra|combo|massivo/.test(s);
   return m&&!r?"movel":r&&!m?"residencial":null;
 }
 const isMulti=k=>{const b=BOL.find(b=>b.k===k);return!!(b&&b.multi)};
 function autoAssign(){
   const data=FILES.filter(f=>["cat","ddd","ambos"].includes(kindOf(f)));
-  /* 1) pelo nome do arquivo ou pelo título do relatório (Pré / Pós e Controle → Ouvidoria) */
-  data.filter(f=>f.assign==null).forEach(f=>{const k=detectKey(f);if(k)f.assign=k});
+  const hasC=f=>kindOf(f)!=="ddd",hasD=f=>kindOf(f)!=="cat";
+  /* o card k já tem um arquivo do mesmo tipo que f? (Ouvidoria aceita vários) */
+  const busy=(k,f)=>!isMulti(k)&&data.some(o=>o!==f&&o.assign===k&&((hasC(f)&&hasC(o))||(hasD(f)&&hasD(o))));
+  /* 1) pelo nome do arquivo (o que vale mais) */
+  data.filter(f=>f.assign==null).forEach(f=>{const k=keyByName(f);if(k)f.assign=k});
   /* 2) arquivo de DDD acompanha o de categorias com o mesmo nome (ex.: CM_N1_24.11_12H e CM_N1_24.11_12H_DDD) */
   data.filter(f=>f.assign==null&&kindOf(f)==="ddd").forEach(f=>{
     const twin=data.find(o=>o!==f&&o.assign&&o.assign!=="skip"&&kindOf(o)!=="ddd"&&stem(o)===stem(f));if(twin)f.assign=twin.assign});
-  /* 3) o que sobrar ocupa o primeiro boletim livre para aquele tipo */
+  /* 3) pelo título do relatório do Verint, sem tomar o lugar de um arquivo já reconhecido */
+  data.filter(f=>f.assign==null).forEach(f=>{const k=keyByTitle(f);if(k&&!busy(k,f))f.assign=k});
+  /* 4) o que sobrar ocupa o primeiro card que ainda não tem esse tipo de arquivo */
   data.filter(f=>f.assign==null).forEach(f=>{
-    const isD=kindOf(f)==="ddd",isC=kindOf(f)!=="ddd";
-    const free=BOL.find(b=>!b.multi&&!data.some(o=>o!==f&&o.assign===b.k&&((isC&&kindOf(o)!=="ddd")||(isD&&kindOf(o)!=="cat"))));
+    const free=BOL.find(b=>!data.some(o=>o!==f&&o.assign===b.k&&((hasC(f)&&hasC(o))||(hasD(f)&&hasD(o)))));
     f.assign=free?free.k:"skip";
   });
   FILES.filter(f=>!["cat","ddd","ambos"].includes(kindOf(f))).forEach(f=>f.assign="skip");
+}
+/* arquivos que ficaram de fora porque outro do mesmo tipo ocupa o mesmo card (vale o último) */
+function conflicts(){
+  const out=[];
+  for(const b of BOL){if(b.multi)continue;
+    const cs=FILES.filter(f=>f.assign===b.k&&(kindOf(f)==="cat"||kindOf(f)==="ambos"));
+    const ds=FILES.filter(f=>f.assign===b.k&&kindOf(f)==="ddd");
+    if(cs.length>1)out.push({b,kind:"categorias",files:cs});
+    if(ds.length>1)out.push({b,kind:"DDD",files:ds});
+  }
+  return out;
 }
 /* boletins comuns: vale o último arquivo de cada tipo; Ouvidoria junta todos (Pré + Pós e Controle) */
 function catFiles(k){const l=FILES.filter(f=>f.assign===k&&(kindOf(f)==="cat"||kindOf(f)==="ambos"));return isMulti(k)?l:l.slice(-1)}
@@ -636,7 +659,7 @@ function buildCard(cfs,dfs,k){
     for(const D of Ds){n+=D.n;idn+=D.idn;for(let i=0;i<D.n;i++){const c=D.codes[i];if(c)rank[D.dl[c-1]]=(rank[D.dl[c-1]]||0)+1}}
     dd={file:dfs.map(f=>f.name).join(" + "),sheet:Ds.map(D=>D.sheet).join(" + "),n,inter:dddTotal,idn,rank,ok,miss};
   }
-  const parts=[...new Set(cfs.map(partOf).filter(Boolean))];
+  const parts=isMulti(k)?[...new Set(cfs.map(partOf).filter(Boolean))]:[];
   const warnFiles=isMulti(k)&&SEG==="movel"&&(cfs.length!==dfs.length||cfs.length<2)?
     `Ouvidoria Móvel com ${cfs.length} arquivo(s) de categorias e ${dfs.length} de DDD. O esperado são 4: categorias Pré, categorias Pós e Controle, DDD Pré e DDD Pós e Controle.`:null;
   return{mode:isRet?"ret":"padrao",dups,total,totalSrc,catTotal:catHasTotal?catTotal:null,dddFile:dfs.length?dfs.map(f=>f.name).join(" + "):null,
@@ -657,14 +680,16 @@ async function addFiles(list){
     FILES=FILES.filter(x=>x.name!==rec.name);rec.id=NEXT++;rec.assign=null;FILES.push(rec);
     status("Lendo arquivos… "+(++done)+" de "+list.length);
   }));
-  autoAssign();ACTIVE=null;
   if(!SEG_TOUCHED){const ss=FILES.map(detectSeg).filter(Boolean);if(ss.length){const m=ss.filter(s=>s==="movel").length;setSeg(m>ss.length-m?"movel":"residencial")}}
+  autoAssign();ACTIVE=null;
   if(!HR_TOUCHED){const hh=detectHora();if(hh)$("hr").value=hh}
   if(!DATE_TOUCHED){
     const ds=FILES.filter(f=>f.r&&f.r.cat).map(f=>f.r.cat.meta.ini||f.r.meta.ini).filter(Boolean);
     if(ds.length){const c={};ds.forEach(d=>c[d]=(c[d]||0)+1);$("dt").value=Object.keys(c).sort((a,b)=>c[b]-c[a])[0];$("dtSrc").textContent="lida do arquivo"}
   }
   const bad=FILES.filter(f=>f.err).length;
+  const cfl=conflicts();
+  if(cfl.length){status("Atenção: "+cfl.map(c=>c.b.tab+" recebeu "+c.files.length+" arquivos de "+c.kind).join(" · ")+" (vale o último; confira os seletores) · "+FILES.length+" arquivo(s) na lista",true);refresh();return}
   status(FILES.length+" arquivo(s) na lista · lidos em "+((performance.now()-t0)/1000).toFixed(1).replace(".",",")+" s"+(bad?" · "+bad+" com problema":""),!!bad&&bad===FILES.length);
   refresh();
 }
@@ -677,7 +702,10 @@ function detectHora(){
   return"";
 }
 function setSeg(s,manual){
-  if(manual)SEG_TOUCHED=true;SEG=s;
+  if(manual)SEG_TOUCHED=true;
+  const changed=s!==SEG;SEG=s;
+  BOL=ALLBOL.filter(b=>b.seg.includes(s==="movel"?"m":"r"));
+  if(changed){FILES.forEach(f=>{const ok=BOL.some(b=>b.k===f.assign);if(!f.manual||!ok){f.assign=null;f.manual=false}});if(FILES.length)autoAssign();ACTIVE=null}
   $("segR").checked=s==="residencial";$("segM").checked=s==="movel";
   document.documentElement.style.setProperty("--seg","#A90000");
 }
@@ -699,13 +727,19 @@ function fileInfo(f){
   return p.join(" · ");
 }
 function renderFiles(){
-  $("files").innerHTML=FILES.map(f=>{
+  const ord=f=>{const i=BOL.findIndex(b=>b.k===f.assign);return(i<0?99:i)*10+(kindOf(f)==="ddd"?1:0)};
+  $("files").innerHTML=FILES.slice().sort((a,b)=>ord(a)-ord(b)||a.name.localeCompare(b.name)).map(f=>{
     const k=kindOf(f);
     const opts=BOL.map(b=>`<option value="${b.k}"${f.assign===b.k?" selected":""}>${b.tab}</option>`).join("")+`<option value="skip"${f.assign==="skip"?" selected":""}>Ignorar</option>`;
-    return `<div class="f${f.err?" bad":""}" data-id="${f.id}"><div class="fi"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${fileInfo(f)}</small></div>`+
+    const cf=conflicts().find(c=>c.files.includes(f)&&c.files[c.files.length-1]!==f);
+    const note=cf?` · <span class="warn">ignorado: o ${cf.b.tab} já tem outro arquivo de ${cf.kind} (${esc(cf.files[cf.files.length-1].name)}). Troque o card no seletor.</span>`:"";
+    return `<div class="f${f.err||cf?" bad":""}" data-id="${f.id}"><div class="fi"><b title="${esc(f.name)}">${esc(f.name)}</b><small>${fileInfo(f)}${note}</small></div>`+
       (["cat","ddd","ambos"].includes(k)?`<select aria-label="Boletim deste arquivo">${opts}</select>`:"")+
       `<button type="button" class="x" aria-label="Remover arquivo" title="Remover">×</button></div>`;
   }).join("");
+  const cmap=BOL.map(b=>{const c=catFiles(b.k).length,d=dddFiles(b.k).length;
+    return `<span class="cs${c?" ok":""}"><b>${b.tab}</b> ${c?"categorias "+(c>1?c+"×":"✓"):"sem categorias"} · ${d?"DDD "+(d>1?d+"×":"✓"):"sem DDD"}</span>`}).join("");
+  $("cardmap").innerHTML=FILES.length?cmap:"";
   const m=REF.meta,custom=m.src!=="padrão";
   $("refline").innerHTML=`Base DePara: <b>${custom?esc(m.src):"padrão embutida (Dado_Informativos_de_base_3)"}</b> · ${REF.hfc.size} HFC · ${REF.movel.size} Móvel · ${REF.ret.size} Retenção · ${Object.keys(REF.uf).length} DDDs`+
     (custom?` · atualizada em ${esc(m.em||"")} <button type="button" class="lnk" id="refReset">voltar ao padrão</button>`:` · para atualizar, carregue a planilha de base junto com os arquivos`);
@@ -750,7 +784,7 @@ function renderSide(){
   const hasDate=!!$("dt").value,ready=filled.length>0&&hasDate;
   const act=ACTIVE?CARD(ACTIVE):null;
   $("n1").textContent=ok;$("n1").className=ok?"on":"";
-  $("n2").textContent=filled.length+"/"+NB;$("n2").className=filled.length?"on":"";
+  $("n2").textContent=filled.length+"/"+BOL.length;$("n2").className=filled.length?"on":"";
   $("n3").textContent=act&&act.total?fint(act.total):"—";$("n3").className=act&&act.total?"on":"";
   $("sT").textContent=filled.length?(filled.length===1?"1 card na imagem":filled.length+" cards na imagem"):"Nenhum arquivo carregado";
   $("sT").className=filled.length?"on":"";
@@ -953,7 +987,7 @@ drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
 ["dragover","drop"].forEach(ev=>window.addEventListener(ev,e=>e.preventDefault()));
 $("files").addEventListener("change",e=>{
   const row=e.target.closest(".f");if(!row||e.target.tagName!=="SELECT")return;
-  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;ACTIVE=null;refresh()}
+  const f=FILES.find(x=>x.id==row.dataset.id);if(f){f.assign=e.target.value;f.manual=true;ACTIVE=null;refresh()}
 });
 $("files").addEventListener("click",e=>{
   const row=e.target.closest(".f");if(!row||!e.target.classList.contains("x"))return;
